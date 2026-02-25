@@ -1,0 +1,139 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/na4ma4/go-slogtool"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"github.com/na4ma4/1password-direnv-tool/internal/cache"
+	"github.com/na4ma4/1password-direnv-tool/internal/cmdconst"
+	"github.com/na4ma4/1password-direnv-tool/internal/codec"
+	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
+	"github.com/na4ma4/1password-direnv-tool/internal/openv"
+)
+
+func init() {
+	rootCmd.PersistentFlags().StringP("section", "s", "Environment", "Section name containing environment variables")
+	_ = viper.BindPFlag("section", rootCmd.PersistentFlags().Lookup("section"))
+	_ = viper.BindEnv("section", "OP_SECTION")
+
+	rootCmd.PersistentFlags().StringP("encrypt-item-reference", "e", "", "Encrypt item reference")
+	_ = viper.BindPFlag("encrypt-item-reference", rootCmd.PersistentFlags().Lookup("encrypt-item-reference"))
+	_ = viper.BindEnv("encrypt-item-reference", "OP_ENCRYPT_ITEM_REFERENCE")
+}
+
+func mainCmd(cmd *cobra.Command, _ []string) error {
+	ctx := cmd.Context()
+
+	logLevel := slog.LevelInfo
+	if viper.GetBool("debug") {
+		logLevel = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
+	logger.DebugContext(ctx, "Enabled Debug Logging")
+
+	if codec.Default == nil {
+		logger.ErrorContext(ctx, "No codec available for decrypting item reference")
+		return fmt.Errorf("%w%v", cmdconst.ErrNoUsage, "no codec available for decrypting item reference")
+	}
+
+	var cst cache.Cache
+	{
+		if viper.GetBool("cache.enabled") {
+			cachePath := viper.GetString("cache.path")
+			{
+				var err error
+				cst, err = cache.NewDisk(cachePath)
+				if err != nil {
+					logger.ErrorContext(ctx, "Failed to initialize file cache", slogtool.ErrorAttr(err))
+					return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+				}
+			}
+			if err := cst.Iterate(ctx, cache.ExpireFunc(viper.GetDuration("cache.age"))); err != nil {
+				logger.ErrorContext(ctx, "Failed to expire old cache entries", slogtool.ErrorAttr(err))
+				return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+			}
+			logger.DebugContext(ctx, "Initialized file cache",
+				slog.String("cache_path", cachePath),
+				slog.Duration("cache_age", viper.GetDuration("cache.age")),
+			)
+		} else {
+			cst = cache.NewNoop()
+			logger.DebugContext(ctx, "Caching disabled")
+		}
+	}
+
+	var itemRef itemref.Ref
+	{
+		var err error
+		itemRef, err = itemref.GetRef(ctx, codec.Default)
+		if err != nil || itemRef.IsEmpty() {
+			logger.ErrorContext(ctx, "Failed to get item reference from configuration", slogtool.ErrorAttr(err))
+			return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+		}
+	}
+
+	logger.InfoContext(ctx, "Loading environment variables from 1Password", slog.String("item", itemRef.String()))
+
+	lazyClient := cache.OnePasswordClientLazyInit(ctx, logger)
+	// client, err := createClient(ctx)
+	// if err != nil {
+	// 	logger.ErrorContext(ctx, "Failed to create 1Password client", slogtool.ErrorAttr(err))
+	// 	return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+	// }
+
+	section := viper.GetString("section")
+
+	ope := openv.New(lazyClient, cst, section, logger)
+
+	envVars, err := ope.GetEnvVars(ctx, itemRef)
+	if err != nil {
+		logger.ErrorContext(ctx, "Failed to retrieve environment variables", slogtool.ErrorAttr(err))
+		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+	}
+
+	for env := range envVars {
+		// We are intentionally writing to stdout in a format that can be
+		// eval'd by the caller, so we need to allow this.
+		//nolint:gosec // intentional, see above.
+		fmt.Fprintf(os.Stdout, "export %s=%s\n", env.Name, shellQuote(env.Value))
+	}
+
+	return nil
+}
+
+// ErrNoAccountName is returned when no 1Password account name is configured.
+var ErrNoAccountName = errors.New(
+	"1Password account name not set, use --1password-account-name flag " +
+		"or 1PASSWORD_ACCOUNT_NAME env var",
+)
+
+// func createClient(ctx context.Context) (*onepassword.Client, error) {
+// 	accountName := viper.GetString("1password.account-name")
+
+// 	if accountName == "" {
+// 		accountName = "my"
+// 	}
+
+// 	client, err := onepassword.NewClient(
+// 		ctx,
+// 		onepassword.WithDesktopAppIntegration(accountName),
+// 		onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
+// 	)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("creating 1Password client: %w", err)
+// 	}
+
+// 	return client, nil
+// }
+
+// shellQuote wraps a string in single quotes, escaping any existing single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}

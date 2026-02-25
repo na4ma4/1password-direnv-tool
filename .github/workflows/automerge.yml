@@ -1,0 +1,10 @@
+name: Dependabot auto-approve
+
+on:
+  pull_request:
+
+jobs:
+  dependabot:
+    if: github.actor == 'dependabot[bot]'
+    name: "Dependabot"
+    uses: na4ma4/actions/.github/workflows/dependabot-automerge.yml@main
