@@ -1,0 +1,67 @@
+version: 2
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - go generate ./...
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: op-direnv
+    main: ./cmd/op-direnv
+    binary: op-direnv
+    ldflags:
+      - "-X github.com/dosquad/go-cliversion.BuildDate={{ .Date }}"
+      - "-X github.com/dosquad/go-cliversion.BuildDebug=false"
+      - "-X github.com/dosquad/go-cliversion.BuildMethod=goreleaser"
+      - "-X github.com/dosquad/go-cliversion.BuildVersion={{.Version}}"
+      - "-X github.com/dosquad/go-cliversion.GitCommit={{.ShortCommit}}"
+      - "-X github.com/dosquad/go-cliversion.GitRepo=https://github.com/na4ma4/1password-direnv-tool"
+      - "-X github.com/dosquad/go-cliversion.GitSlug=na4ma4/1password-direnv-tool"
+      - "-X github.com/dosquad/go-cliversion.GitTag={{.Version}}"
+      - "-X github.com/dosquad/go-cliversion.GitExactTag={{.RawVersion}}"
+      - "-s"
+      - "-w"
+    flags:
+      - -tags=release
+      - -buildmode=default
+      - -trimpath
+      - -v
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goarm: [ '5', '7' ]
+    goos: ['linux', 'darwin']
+    goarch: ['amd64', 'arm', 'arm64']
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: darwin
+        goarch: amd64
+
+archives:
+  -
+    ids:
+      - op-direnv
+    formats: ["tar.gz"]
+    name_template: |
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ if (eq .Arch "arm64") }}aarch64{{ else }}{{ .Arch }}{{ end }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end -}}
+    allow_different_binary_count: true
+    format_overrides:
+      - goos: windows
+        formats: ["zip"]
+
+checksum:
+  algorithm: sha256
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

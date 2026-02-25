@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Project binaries
+/op-direnv
+cmd/op-direnv/op-direnv
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -30,3 +34,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+/artifacts
+/.makefiles
+/dist
