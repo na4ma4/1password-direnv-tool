@@ -41,7 +41,7 @@ cask "op-direnv" do
 
   on_macos do
     on_arm do
-      url "https://github.com/na4ma4/1password-direnv-tool/releases/download/v#{version}/op-direnv_darwin_arm64.tar.gz"
+      url "https://github.com/na4ma4/1password-direnv-tool/releases/download/#{version}/op-direnv_darwin_arm64.tar.gz"
       sha256 "${SHA_DARWIN_ARM64}"
     end
   end
