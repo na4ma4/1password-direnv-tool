@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.3](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.2...v1.0.3) (2026-02-26)
+
+
+### Bug Fixes
+
+* enabled encryption on cache ([73095b1](https://github.com/na4ma4/1password-direnv-tool/commit/73095b14591f340c23c00405d14391e1199b1540))
+* homebrew deployment script ([ecc1c75](https://github.com/na4ma4/1password-direnv-tool/commit/ecc1c758ca1f85b9c6aa01a212e44f68306845f8))
+
 ## [1.0.2](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.1...v1.0.2) (2026-02-26)
 
 
