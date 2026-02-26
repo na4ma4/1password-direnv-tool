@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/1password/onepassword-sdk-go"
@@ -13,6 +14,10 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
 	"github.com/na4ma4/1password-direnv-tool/internal/modifier"
 )
+
+// validEnvVarName matches valid POSIX shell variable names: a letter or underscore
+// followed by zero or more letters, digits, or underscores.
+var validEnvVarName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 type Generator struct {
 	client  cache.OPClientFunc
@@ -165,6 +170,14 @@ func (g *Generator) processItemFields(
 			parts := strings.Split(field.Title, ":")
 			varName := parts[0]
 			modifiers := parts[1:]
+
+			if !validEnvVarName.MatchString(varName) {
+				g.logger.WarnContext(ctx, "Skipping field with invalid environment variable name",
+					slog.String("field", varName),
+				)
+
+				continue
+			}
 
 			g.logger.InfoContext(ctx, "Processing field",
 				slog.String("field", varName),

@@ -2,8 +2,6 @@ module ggithub.com/na4ma4/1password-direnv-tool/magefiles
 
 go 1.26.0
 
-toolchain go1.26.0
-
 require (
 	github.com/dosquad/mage v0.3.4
 	github.com/magefile/mage v1.15.0
