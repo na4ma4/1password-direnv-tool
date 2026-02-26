@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.1...v1.0.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* release builds on macos (default golang is 1.25) ([89a7e46](https://github.com/na4ma4/1password-direnv-tool/commit/89a7e46f52fa8495a39cc5320f0904aba520e632))
+
 ## [1.0.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.0...v1.0.1) (2026-02-26)
 
 
