@@ -27,7 +27,6 @@ func (g *git) String() string {
 func getGitConfig(ctx context.Context, key string) (*git, error) {
 	// key is a static config key (e.g. "1password.envrc-item") passed as a separate
 	// argument to git, not shell-interpolated, so command injection is not possible.
-	//nolint:gosec // G204: key is a hardcoded config key passed as a separate exec argument.
 	out, err := exec.CommandContext(ctx, "git", "config", "--get", key).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git config --get %q: %w", key, err)
