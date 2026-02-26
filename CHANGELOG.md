@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.0...v1.0.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* release builds on macos ([964909e](https://github.com/na4ma4/1password-direnv-tool/commit/964909e50a404b610807347a4f74343f4cca5827))
+
 ## 1.0.0 (2026-02-26)
 
 
