@@ -63,6 +63,8 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 				slog.String("cache_path", cachePath),
 				slog.Duration("cache_age", viper.GetDuration("cache.age")),
 			)
+
+			cst = cache.NewEncryption(cst, codec.Default)
 		} else {
 			cst = cache.NewNoop()
 			logger.DebugContext(ctx, "Caching disabled")
@@ -82,14 +84,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 	logger.InfoContext(ctx, "Loading environment variables from 1Password", slog.String("item", itemRef.String()))
 
 	lazyClient := cache.OnePasswordClientLazyInit(ctx, logger)
-	// client, err := createClient(ctx)
-	// if err != nil {
-	// 	logger.ErrorContext(ctx, "Failed to create 1Password client", slogtool.ErrorAttr(err))
-	// 	return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
-	// }
-
 	section := viper.GetString("section")
-
 	ope := openv.New(lazyClient, cst, section, logger)
 
 	envVars, err := ope.GetEnvVars(ctx, itemRef)
@@ -113,25 +108,6 @@ var ErrNoAccountName = errors.New(
 	"1Password account name not set, use --1password-account-name flag " +
 		"or 1PASSWORD_ACCOUNT_NAME env var",
 )
-
-// func createClient(ctx context.Context) (*onepassword.Client, error) {
-// 	accountName := viper.GetString("1password.account-name")
-
-// 	if accountName == "" {
-// 		accountName = "my"
-// 	}
-
-// 	client, err := onepassword.NewClient(
-// 		ctx,
-// 		onepassword.WithDesktopAppIntegration(accountName),
-// 		onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
-// 	)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("creating 1Password client: %w", err)
-// 	}
-
-// 	return client, nil
-// }
 
 // shellQuote wraps a string in single quotes, escaping any existing single quotes.
 func shellQuote(s string) string {
