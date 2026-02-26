@@ -1,0 +1,70 @@
+name: release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  CGO_ENABLED: 1
+  PLATFORMS: darwin/arm64
+  HOMEBREW_REPO: na4ma4/homebrew-tap
+
+jobs:
+  release-artifacts:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ^1
+          cache: true
+        id: go
+
+      - name: Set up go env
+        run: |
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: Run Mage
+        uses: magefile/mage-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        with:
+          version: latest
+          args: build:archive
+
+      - name: Upload Release Artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.event.release.tag_name }} ./artifacts/archives/* --clobber
+
+      - name: Checkout Homebrew Tap
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.HOMEBREW_REPO }}
+          path: homebrew-tap
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+
+      - name: Generate Homebrew Cask
+        id: generate_homebrew_cask
+        run: |
+          echo "Version: ${VERSION}"
+          VERSION=${VERSION} .github/scripts/generate_homebrew_cask.sh ./homebrew-tap/Casks/
+          echo "Outputs: "
+          cat "${GITHUB_OUTPUT}"
+      
+      - name: Commit and Push Homebrew Tap
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/*.rb
+          git commit -m "${{ steps.generate_homebrew_cask.outputs.target_name || 'unnamed cask' }} ${VERSION}"
+          git push origin main
