@@ -1,0 +1,16 @@
+# Changelog
+
+## 1.0.0 (2026-02-26)
+
+
+### Features
+
+* Add Go CLI tool outline replacing shell script with onepassword-sdk-go ([#1](https://github.com/na4ma4/1password-direnv-tool/issues/1)) ([8714019](https://github.com/na4ma4/1password-direnv-tool/commit/8714019c9d0374eeac185f09bceeb9f1c336e611))
+
+
+### Bug Fixes
+
+* dependabot auto-merge and go workspace files ([312c263](https://github.com/na4ma4/1password-direnv-tool/commit/312c263770601080bdd3a3b7b898b53dcb52b710))
+* linter warning in non-darwin code ([6ccd707](https://github.com/na4ma4/1password-direnv-tool/commit/6ccd707f92fc671592e69d1b4ed76ce02858be35))
+* update github workflow ([83c8425](https://github.com/na4ma4/1password-direnv-tool/commit/83c8425d3b500f2caac5efd4cdc9d3ee52c23301))
+* update missing go-module ([13d2691](https://github.com/na4ma4/1password-direnv-tool/commit/13d26912902d16dbbf71454c183b7cd3e79cf88a))
