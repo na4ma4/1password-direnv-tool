@@ -104,14 +104,19 @@ func (d *Disk) Clear(_ context.Context) error {
 
 func (d *Disk) Delete(_ context.Context, key string) error {
 	filename := d.keyToFilename(key)
-	return os.Remove(d.path + "/" + filename)
+	return d.root.Remove(filename)
 }
 
 func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
 	var entries []os.DirEntry
 	{
-		var err error
-		entries, err = os.ReadDir(d.root.Name())
+		dir, err := d.root.Open(".")
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+
+		entries, err = dir.ReadDir(-1)
 		if err != nil {
 			return err
 		}
