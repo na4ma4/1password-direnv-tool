@@ -32,13 +32,12 @@ jobs:
         run: |
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
-      - name: Run Mage
-        uses: magefile/mage-action@v3
+      - name: Install and Run Mage (macOS)
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-        with:
-          version: latest
-          args: build:archive
+        run: |
+          brew install --force mage
+          mage build:archive
 
       - name: Upload Release Artifact
         env:
