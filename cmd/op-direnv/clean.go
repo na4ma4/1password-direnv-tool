@@ -31,7 +31,7 @@ func cleanCommand(cmd *cobra.Command, _ []string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
-	logger.Debug("Cleaning cached values")
+	logger.Debug("cleaning cached values")
 
 	var cst cache.Cache
 	{
@@ -41,29 +41,29 @@ func cleanCommand(cmd *cobra.Command, _ []string) error {
 				var err error
 				cst, err = cache.NewDisk(cachePath)
 				if err != nil {
-					logger.ErrorContext(ctx, "Failed to initialize file cache", slogtool.ErrorAttr(err))
+					logger.ErrorContext(ctx, "failed to initialize file cache", slogtool.ErrorAttr(err))
 					return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 				}
 			}
 			if err := cst.Iterate(ctx, cache.ExpireFunc(viper.GetDuration("cache.age"))); err != nil {
-				logger.ErrorContext(ctx, "Failed to expire old cache entries", slogtool.ErrorAttr(err))
+				logger.ErrorContext(ctx, "failed to expire old cache entries", slogtool.ErrorAttr(err))
 				return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 			}
-			logger.DebugContext(ctx, "Initialized file cache",
+			logger.DebugContext(ctx, "initialized file cache",
 				slog.String("cache_path", cachePath),
 				slog.Duration("cache_age", viper.GetDuration("cache.age")),
 			)
 		} else {
 			cst = cache.NewNoop()
-			logger.DebugContext(ctx, "Caching disabled")
+			logger.DebugContext(ctx, "caching disabled")
 		}
 	}
 
 	if err := cst.Clear(ctx); err != nil {
-		logger.ErrorContext(ctx, "Failed to clear cache", slogtool.ErrorAttr(err))
+		logger.ErrorContext(ctx, "failed to clear cache", slogtool.ErrorAttr(err))
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 
-	logger.Info("Cache cleared successfully")
+	logger.Info("cache cleared successfully")
 	return nil
 }

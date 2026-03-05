@@ -49,21 +49,21 @@ func (g *Generator) GetEnvVars(ctx context.Context, itemRef itemref.Ref) (<-chan
 		return nil, fmt.Errorf("parsing item reference %q: %w", itemRef, err)
 	}
 
-	g.logger.DebugContext(ctx, "Resolving vault", slog.String("vault", vaultRef))
+	g.logger.DebugContext(ctx, "resolving vault", slog.String("vault", vaultRef))
 
 	vaultID, err := g.resolveVaultID(ctx, vaultRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
 	}
 
-	g.logger.DebugContext(ctx, "Resolving item", slog.String("item", itemName), slog.String("vault_id", vaultID))
+	g.logger.DebugContext(ctx, "resolving item", slog.String("item", itemName), slog.String("vault_id", vaultID))
 
 	itemID, err := g.resolveItemID(ctx, vaultID, itemName)
 	if err != nil {
 		return nil, fmt.Errorf("resolving item %q: %w", itemName, err)
 	}
 
-	g.logger.DebugContext(ctx, "Getting item", slog.String("item_id", itemID), slog.String("vault_id", vaultID))
+	g.logger.DebugContext(ctx, "getting item", slog.String("item_id", itemID), slog.String("vault_id", vaultID))
 
 	item, err := g.opGetItem(ctx, vaultID, itemID)
 	if err != nil {
@@ -172,21 +172,21 @@ func (g *Generator) processItemFields(
 			modifiers := parts[1:]
 
 			if !validEnvVarName.MatchString(varName) {
-				g.logger.WarnContext(ctx, "Skipping field with invalid environment variable name",
+				g.logger.WarnContext(ctx, "skipping field with invalid environment variable name",
 					slog.String("field", varName),
 				)
 
 				continue
 			}
 
-			g.logger.InfoContext(ctx, "Processing field",
+			g.logger.InfoContext(ctx, "processing field",
 				slog.String("field", varName),
 				slog.String("modifiers", strings.Join(modifiers, ",")),
 			)
 
 			value, err := mod.Apply(ctx, field.Value, modifiers)
 			if err != nil {
-				g.logger.WarnContext(ctx, "Skipping field due to error",
+				g.logger.WarnContext(ctx, "skipping field due to error",
 					slog.String("field", varName),
 					slogtool.ErrorAttr(err),
 				)
