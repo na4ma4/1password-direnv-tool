@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/na4ma4/go-slogtool"
 	"github.com/spf13/cobra"
@@ -18,6 +20,10 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/openv"
 )
 
+const (
+	defaultTimeout = 2 * time.Minute
+)
+
 func init() {
 	rootCmd.PersistentFlags().StringP("section", "s", "Environment", "Section name containing environment variables")
 	_ = viper.BindPFlag("section", rootCmd.PersistentFlags().Lookup("section"))
@@ -26,10 +32,16 @@ func init() {
 	rootCmd.PersistentFlags().StringP("encrypt-item-reference", "e", "", "Encrypt item reference")
 	_ = viper.BindPFlag("encrypt-item-reference", rootCmd.PersistentFlags().Lookup("encrypt-item-reference"))
 	_ = viper.BindEnv("encrypt-item-reference", "OP_ENCRYPT_ITEM_REFERENCE")
+
+	rootCmd.PersistentFlags().DurationP("timeout", "t", defaultTimeout, "Timeout for operations")
+	_ = viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
+	_ = viper.BindEnv("timeout", "OP_TIMEOUT")
 }
 
 func mainCmd(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
+	ctx, cancel := context.WithTimeout(ctx, viper.GetDuration("timeout"))
+	defer cancel()
 
 	logLevel := slog.LevelInfo
 	if viper.GetBool("debug") {

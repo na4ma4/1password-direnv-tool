@@ -34,6 +34,36 @@ type lazyOPClient struct {
 //nolint:gochecknoglobals // lazyClient is intended to be a global variable for lazy initialization
 var lazyClient = &lazyOPClient{}
 
+type newClientResult struct {
+	client *onepassword.Client
+	err    error
+}
+
+func newOnePasswordClientCancelable(ctx context.Context, accountName string) (*onepassword.Client, error) {
+	resultCh := make(chan newClientResult, 1)
+
+	go func() {
+		client, err := onepassword.NewClient(
+			ctx,
+			onepassword.WithDesktopAppIntegration(accountName),
+			onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
+		)
+
+		resultCh <- newClientResult{client: client, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("creating 1Password client canceled: %w", ctx.Err())
+	case result := <-resultCh:
+		if result.err != nil {
+			return nil, fmt.Errorf("creating 1Password client: %w", result.err)
+		}
+
+		return result.client, nil
+	}
+}
+
 func OnePasswordClientLazyInit(_ context.Context, logger *slog.Logger) OPClientFunc {
 	accountName := viper.GetString("1password.account-name")
 
@@ -49,15 +79,18 @@ func OnePasswordClientLazyInit(_ context.Context, logger *slog.Logger) OPClientF
 			return lazyClient.client, nil
 		}
 
-		var err error
-		lazyClient.client, err = onepassword.NewClient(
-			ctx,
-			onepassword.WithDesktopAppIntegration(accountName),
-			onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
+		logger.DebugContext(ctx, "lazy initialization of 1Password client: started",
+			slog.String("account_name", accountName),
 		)
+		defer logger.DebugContext(ctx, "lazy initialization of 1Password client: finished",
+			slog.String("account_name", accountName),
+		)
+
+		var err error
+		lazyClient.client, err = newOnePasswordClientCancelable(ctx, accountName)
 		if err != nil {
 			logger.ErrorContext(ctx, "Failed to create 1Password client", slogtool.ErrorAttr(err))
-			return nil, fmt.Errorf("creating 1Password client: %w", err)
+			return nil, err
 		}
 
 		return lazyClient.client, nil
@@ -146,15 +179,17 @@ func OnePasswordGetItem(
 		}
 	}
 
+	logger.DebugContext(ctx, "initialising 1Password client")
 	var client *onepassword.Client
 	{
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return onepassword.Item{}, fmt.Errorf("initializing 1Password client: %w", err)
+			return onepassword.Item{}, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
+	logger.DebugContext(ctx, "retrieving item")
 	var item onepassword.Item
 	{
 		var err error
@@ -165,6 +200,7 @@ func OnePasswordGetItem(
 	}
 
 	if cc != nil {
+		logger.DebugContext(ctx, "saving item to cache", slog.String("cache_key", cacheKey))
 		buf := bytes.NewBuffer(nil)
 		if err := json.NewEncoder(buf).Encode(item); err != nil {
 			logger.ErrorContext(ctx, "Failed to encode item for caching",
@@ -204,15 +240,17 @@ func OnePasswordVaultList(
 		}
 	}
 
+	logger.DebugContext(ctx, "initialising 1password client")
 	var client *onepassword.Client
 	{
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("initializing 1Password client: %w", err)
+			return nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
+	logger.DebugContext(ctx, "retrieving vaults list")
 	var vaults []onepassword.VaultOverview
 	{
 		var err error
@@ -223,16 +261,17 @@ func OnePasswordVaultList(
 	}
 
 	if cc != nil {
+		logger.DebugContext(ctx, "saving vault list to cache", slog.String("cache_key", cacheKey))
 		buf := bytes.NewBuffer(nil)
 		if err := json.NewEncoder(buf).Encode(vaults); err != nil {
-			logger.ErrorContext(ctx, "Failed to encode vault list for caching",
+			logger.ErrorContext(ctx, "failed to encode vault list for caching",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 			return vaults, nil
 		}
 		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
-			logger.ErrorContext(ctx, "Cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
+			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 		} else {
-			logger.DebugContext(ctx, "Cached vault list", slog.String("cache_key", cacheKey))
+			logger.DebugContext(ctx, "cached vault list", slog.String("cache_key", cacheKey))
 		}
 	}
 
@@ -244,7 +283,8 @@ func OnePasswordItemList(
 	cc Cache,
 	logger *slog.Logger,
 	opClient OPClientFunc,
-	vaultID string) ([]onepassword.ItemOverview, error) {
+	vaultID string,
+) ([]onepassword.ItemOverview, error) {
 	cacheKey := "items:list:" + vaultID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
 		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
@@ -262,15 +302,17 @@ func OnePasswordItemList(
 		}
 	}
 
+	logger.DebugContext(ctx, "initialising 1password client")
 	var client *onepassword.Client
 	{
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("initializing 1Password client: %w", err)
+			return nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
+	logger.DebugContext(ctx, "retrieving item list")
 	var items []onepassword.ItemOverview
 	{
 		var err error
@@ -281,6 +323,7 @@ func OnePasswordItemList(
 	}
 
 	if cc != nil {
+		logger.DebugContext(ctx, "saving item list to cache", slog.String("cache_key", cacheKey))
 		buf := bytes.NewBuffer(nil)
 		if err := json.NewEncoder(buf).Encode(items); err != nil {
 			logger.ErrorContext(ctx, "Failed to encode item list for caching",
