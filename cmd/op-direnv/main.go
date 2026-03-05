@@ -29,10 +29,6 @@ func init() {
 	_ = viper.BindPFlag("section", rootCmd.PersistentFlags().Lookup("section"))
 	_ = viper.BindEnv("section", "OP_SECTION")
 
-	rootCmd.PersistentFlags().StringP("encrypt-item-reference", "e", "", "Encrypt item reference")
-	_ = viper.BindPFlag("encrypt-item-reference", rootCmd.PersistentFlags().Lookup("encrypt-item-reference"))
-	_ = viper.BindEnv("encrypt-item-reference", "OP_ENCRYPT_ITEM_REFERENCE")
-
 	rootCmd.PersistentFlags().DurationP("timeout", "t", defaultTimeout, "Timeout for operations")
 	_ = viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
 	_ = viper.BindEnv("timeout", "OP_TIMEOUT")
