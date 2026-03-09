@@ -12,7 +12,7 @@ import (
 
 const (
 	cacheFileExtension = ".dat"
-	cacheFileMode      = 0600
+	cacheFileMode      = 0o600
 )
 
 type Disk struct {
@@ -23,7 +23,7 @@ type Disk struct {
 func NewDisk(path string) (*Disk, error) {
 	path = os.ExpandEnv(path)
 
-	_ = os.MkdirAll(path, 0700)
+	_ = os.MkdirAll(path, 0o700)
 
 	root, err := os.OpenRoot(path)
 	if err != nil {
@@ -98,7 +98,7 @@ func (d *Disk) Writer(_ context.Context, key string) (io.WriteCloser, error) {
 }
 
 func (d *Disk) Clear(_ context.Context) error {
-	defer func() { _ = os.Mkdir(d.path, 0700) }()
+	defer func() { _ = os.Mkdir(d.path, 0o700) }()
 	return os.RemoveAll(d.path)
 }
 

@@ -31,11 +31,11 @@ func exportKeyCommand(cmd *cobra.Command, _ []string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
-	logger.Debug("Exporting encryption key")
+	logger.Debug("exporting encryption key")
 
 	key, err := codec.Default.ExportKey()
 	if err != nil {
-		logger.ErrorContext(ctx, "Failed to export encryption key", slogtool.ErrorAttr(err))
+		logger.ErrorContext(ctx, "failed to export encryption key", slogtool.ErrorAttr(err))
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 

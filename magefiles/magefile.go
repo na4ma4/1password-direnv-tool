@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"os"
 
 	"github.com/magefile/mage/mg"
 
@@ -12,6 +13,7 @@ import (
 )
 
 func init() {
+	os.Setenv("CGO_ENABLED", "1")
 	// dyndep.Add(dyndep.Golang,
 	// 	func(ctx context.Context) error { mg.F(mage.Golang.Generate); return nil },
 	// )

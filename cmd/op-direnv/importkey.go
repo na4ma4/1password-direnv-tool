@@ -32,7 +32,7 @@ func importKeyCommand(cmd *cobra.Command, _ []string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
-	logger.Debug("Importing encryption key")
+	logger.Debug("importing encryption key")
 
 	fmt.Fprint(os.Stdout, "Enter the encryption key: ")
 	reader := bufio.NewReader(os.Stdin)
@@ -46,7 +46,7 @@ func importKeyCommand(cmd *cobra.Command, _ []string) error {
 	}
 
 	if err := codec.Default.ImportKey(input); err != nil {
-		logger.ErrorContext(ctx, "Failed to import encryption key", slogtool.ErrorAttr(err))
+		logger.ErrorContext(ctx, "failed to import encryption key", slogtool.ErrorAttr(err))
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 
