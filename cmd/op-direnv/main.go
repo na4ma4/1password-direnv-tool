@@ -104,7 +104,6 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 	for env := range envVars {
 		// We are intentionally writing to stdout in a format that can be
 		// eval'd by the caller, so we need to allow this.
-		//nolint:gosec // intentional, see above.
 		fmt.Fprintf(os.Stdout, "export %s=%s\n", env.Name, shellQuote(env.Value))
 	}
 
