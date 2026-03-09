@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.3...v1.0.4) (2026-03-09)
+
+
+### Bug Fixes
+
+* timeout on onepassword client initialization ([#8](https://github.com/na4ma4/1password-direnv-tool/issues/8)) ([88845c3](https://github.com/na4ma4/1password-direnv-tool/commit/88845c323b3baad65139355d8802efd1464d84a0))
+
 ## [1.0.3](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.2...v1.0.3) (2026-02-26)
 
 
