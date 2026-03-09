@@ -128,7 +128,7 @@ func OnePasswordSecretResolve(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return "", fmt.Errorf("initializing 1Password client: %w", err)
+			return "", fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
