@@ -44,10 +44,10 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 		logLevel = slog.LevelDebug
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
-	logger.DebugContext(ctx, "Enabled Debug Logging")
+	logger.DebugContext(ctx, "enabled debug logging")
 
 	if codec.Default == nil {
-		logger.ErrorContext(ctx, "No codec available for decrypting item reference")
+		logger.ErrorContext(ctx, "no codec available for decrypting item reference")
 		return fmt.Errorf("%w%v", cmdconst.ErrNoUsage, "no codec available for decrypting item reference")
 	}
 
@@ -59,15 +59,15 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 				var err error
 				cst, err = cache.NewDisk(cachePath)
 				if err != nil {
-					logger.ErrorContext(ctx, "Failed to initialize file cache", slogtool.ErrorAttr(err))
+					logger.ErrorContext(ctx, "failed to initialize file cache", slogtool.ErrorAttr(err))
 					return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 				}
 			}
 			if err := cst.Iterate(ctx, cache.ExpireFunc(viper.GetDuration("cache.age"))); err != nil {
-				logger.ErrorContext(ctx, "Failed to expire old cache entries", slogtool.ErrorAttr(err))
+				logger.ErrorContext(ctx, "failed to expire old cache entries", slogtool.ErrorAttr(err))
 				return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 			}
-			logger.DebugContext(ctx, "Initialized file cache",
+			logger.DebugContext(ctx, "initialized file cache",
 				slog.String("cache_path", cachePath),
 				slog.Duration("cache_age", viper.GetDuration("cache.age")),
 			)
@@ -75,7 +75,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 			cst = cache.NewEncryption(cst, codec.Default)
 		} else {
 			cst = cache.NewNoop()
-			logger.DebugContext(ctx, "Caching disabled")
+			logger.DebugContext(ctx, "caching disabled")
 		}
 	}
 
@@ -84,12 +84,12 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 		var err error
 		itemRef, err = itemref.GetRef(ctx, codec.Default)
 		if err != nil || itemRef.IsEmpty() {
-			logger.ErrorContext(ctx, "Failed to get item reference from configuration", slogtool.ErrorAttr(err))
+			logger.ErrorContext(ctx, "failed to get item reference from configuration", slogtool.ErrorAttr(err))
 			return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 		}
 	}
 
-	logger.InfoContext(ctx, "Loading environment variables from 1Password", slog.String("item", itemRef.String()))
+	logger.InfoContext(ctx, "loading environment variables from 1Password", slog.String("item", itemRef.String()))
 
 	lazyClient := cache.OnePasswordClientLazyInit(ctx, logger)
 	section := viper.GetString("section")
@@ -97,7 +97,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 
 	envVars, err := ope.GetEnvVars(ctx, itemRef)
 	if err != nil {
-		logger.ErrorContext(ctx, "Failed to retrieve environment variables", slogtool.ErrorAttr(err))
+		logger.ErrorContext(ctx, "failed to retrieve environment variables", slogtool.ErrorAttr(err))
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 

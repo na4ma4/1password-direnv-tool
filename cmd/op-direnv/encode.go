@@ -31,11 +31,11 @@ func encodeCommand(cmd *cobra.Command, args []string) error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
 
-	logger.Debug("Encrypting item reference")
+	logger.Debug("encrypting item reference")
 
 	encRef, err := codec.Default.Encode(args[0])
 	if err != nil {
-		logger.ErrorContext(ctx, "Failed to encrypt item reference", slogtool.ErrorAttr(err))
+		logger.ErrorContext(ctx, "failed to encrypt item reference", slogtool.ErrorAttr(err))
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 
