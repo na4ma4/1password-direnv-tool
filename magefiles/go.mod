@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/dosquad/mage v0.3.4
-	github.com/magefile/mage v1.15.0
+	github.com/magefile/mage v1.16.1
 )
 
 require (
