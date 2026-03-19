@@ -103,6 +103,110 @@ func jsonDecode[T any](data string) (T, error) {
 	return v, err
 }
 
+// resolveSecretCancelable wraps the secret resolution with explicit timeout handling.
+// This ensures the call returns even if the 1Password SDK doesn't properly respect context cancellation.
+func resolveSecretCancelable(
+	ctx context.Context,
+	client *onepassword.Client,
+	secretRef string,
+) (string, error) {
+	type result struct {
+		value string
+		err   error
+	}
+
+	resultCh := make(chan result, 1)
+
+	go func() {
+		value, err := client.Secrets().Resolve(ctx, secretRef)
+		resultCh <- result{value: value, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("resolving secret %q canceled: %w", secretRef, ctx.Err())
+	case res := <-resultCh:
+		return res.value, res.err
+	}
+}
+
+// getItemCancelable wraps the item retrieval with explicit timeout handling.
+func getItemCancelable(
+	ctx context.Context,
+	client *onepassword.Client,
+	vaultID, itemID string,
+) (onepassword.Item, error) {
+	type result struct {
+		item onepassword.Item
+		err  error
+	}
+
+	resultCh := make(chan result, 1)
+
+	go func() {
+		item, err := client.Items().Get(ctx, vaultID, itemID)
+		resultCh <- result{item: item, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return onepassword.Item{}, fmt.Errorf("getting item %q from vault %q canceled: %w", itemID, vaultID, ctx.Err())
+	case res := <-resultCh:
+		return res.item, res.err
+	}
+}
+
+// listVaultsCancelable wraps the vault list retrieval with explicit timeout handling.
+func listVaultsCancelable(
+	ctx context.Context,
+	client *onepassword.Client,
+) ([]onepassword.VaultOverview, error) {
+	type result struct {
+		vaults []onepassword.VaultOverview
+		err    error
+	}
+
+	resultCh := make(chan result, 1)
+
+	go func() {
+		vaults, err := client.Vaults().List(ctx)
+		resultCh <- result{vaults: vaults, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("listing vaults canceled: %w", ctx.Err())
+	case res := <-resultCh:
+		return res.vaults, res.err
+	}
+}
+
+// listItemsCancelable wraps the item list retrieval with explicit timeout handling.
+func listItemsCancelable(
+	ctx context.Context,
+	client *onepassword.Client,
+	vaultID string,
+) ([]onepassword.ItemOverview, error) {
+	type result struct {
+		items []onepassword.ItemOverview
+		err   error
+	}
+
+	resultCh := make(chan result, 1)
+
+	go func() {
+		items, err := client.Items().List(ctx, vaultID)
+		resultCh <- result{items: items, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("listing items in vault %q canceled: %w", vaultID, ctx.Err())
+	case res := <-resultCh:
+		return res.items, res.err
+	}
+}
+
 func OnePasswordSecretResolve(
 	ctx context.Context,
 	cc Cache,
@@ -135,7 +239,7 @@ func OnePasswordSecretResolve(
 	var item string
 	{
 		var err error
-		item, err = client.Secrets().Resolve(ctx, secretRef)
+		item, err = resolveSecretCancelable(ctx, client, secretRef)
 		if err != nil {
 			return "", err
 		}
@@ -193,7 +297,7 @@ func OnePasswordGetItem(
 	var item onepassword.Item
 	{
 		var err error
-		item, err = client.Items().Get(ctx, vaultID, itemID)
+		item, err = getItemCancelable(ctx, client, vaultID, itemID)
 		if err != nil {
 			return onepassword.Item{}, err
 		}
@@ -254,7 +358,7 @@ func OnePasswordVaultList(
 	var vaults []onepassword.VaultOverview
 	{
 		var err error
-		vaults, err = client.Vaults().List(ctx)
+		vaults, err = listVaultsCancelable(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -316,7 +420,7 @@ func OnePasswordItemList(
 	var items []onepassword.ItemOverview
 	{
 		var err error
-		items, err = client.Items().List(ctx, vaultID)
+		items, err = listItemsCancelable(ctx, client, vaultID)
 		if err != nil {
 			return nil, err
 		}
