@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.1.0...v1.1.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* gosec linter warning ([78c2660](https://github.com/na4ma4/1password-direnv-tool/commit/78c26609881993bb28e7c49548dbe0858d26a322))
+
+
+### Miscellaneous Chores
+
+* release 1.1.1 ([8784fea](https://github.com/na4ma4/1password-direnv-tool/commit/8784feabe788064ce20d95cb2aa56c175d15f606))
+
 ## [1.1.0](https://github.com/na4ma4/1password-direnv-tool/compare/v1.0.3...v1.1.0) (2026-03-19)
 
 
