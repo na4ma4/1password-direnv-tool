@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/1password/onepassword-sdk-go"
-	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 	"github.com/na4ma4/go-slogtool"
 	"github.com/spf13/viper"
+
+	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 )
 
 func jsonDecode[T any](data string) (T, error) {
@@ -383,7 +384,7 @@ func OnePasswordSecretResolve(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient opclient.OPClientFunc,
+	opClient opclient.Func,
 	secretRef string,
 ) (string, error) {
 	if cc != nil {
@@ -432,7 +433,7 @@ func OnePasswordGetItem(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient opclient.OPClientFunc,
+	opClient opclient.Func,
 	vaultID, itemID string,
 ) (onepassword.Item, error) {
 	cacheKey := "item:" + vaultID + ":" + itemID
@@ -499,7 +500,7 @@ func OnePasswordVaultList(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient opclient.OPClientFunc,
+	opClient opclient.Func,
 ) ([]onepassword.VaultOverview, error) {
 	cacheKey := "vaults:list"
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
@@ -558,7 +559,7 @@ func OnePasswordItemList(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient opclient.OPClientFunc,
+	opClient opclient.Func,
 	vaultID string,
 ) ([]onepassword.ItemOverview, error) {
 	cacheKey := "items:list:" + vaultID

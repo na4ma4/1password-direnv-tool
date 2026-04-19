@@ -21,14 +21,14 @@ import (
 var validEnvVarName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 type Generator struct {
-	client  opclient.OPClientFunc
+	client  opclient.Func
 	cache   cache.Cache
 	section string
 	logger  *slog.Logger
 }
 
 func New(
-	client opclient.OPClientFunc,
+	client opclient.Func,
 	cache cache.Cache,
 	section string,
 	logger *slog.Logger,

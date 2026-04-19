@@ -39,7 +39,7 @@ func WithModifiers(modifiers ...Modifier) regoptionsFunc {
 }
 
 type options struct {
-	client opclient.OPClientFunc
+	client opclient.Func
 	logger *slog.Logger
 	cache  cache.Cache
 }
@@ -64,7 +64,7 @@ func WithLogger(logger *slog.Logger) optionsFunc {
 // WithOnePasswordClient sets the 1Password client to be used by the generator.
 //
 //nolint:revive // WithOnePasswordClient is not intended to be used as an interface
-func WithOnePasswordClient(client opclient.OPClientFunc) optionsFunc {
+func WithOnePasswordClient(client opclient.Func) optionsFunc {
 	return func(o *options) {
 		o.client = client
 	}
