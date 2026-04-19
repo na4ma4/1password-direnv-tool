@@ -17,6 +17,7 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/cmdconst"
 	"github.com/na4ma4/1password-direnv-tool/internal/codec"
 	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
+	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 	"github.com/na4ma4/1password-direnv-tool/internal/openv"
 )
 
@@ -91,7 +92,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 
 	logger.InfoContext(ctx, "loading environment variables from 1Password", slog.String("item", itemRef.String()))
 
-	lazyClient := cache.OnePasswordClientLazyInit(ctx, logger)
+	lazyClient := opclient.OnePasswordClientLazyInit(ctx, logger)
 	section := viper.GetString("section")
 	ope := openv.New(lazyClient, cst, section, logger)
 

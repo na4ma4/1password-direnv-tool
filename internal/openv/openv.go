@@ -13,6 +13,7 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/cache"
 	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
 	"github.com/na4ma4/1password-direnv-tool/internal/modifier"
+	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 )
 
 // validEnvVarName matches valid POSIX shell variable names: a letter or underscore
@@ -20,14 +21,14 @@ import (
 var validEnvVarName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 type Generator struct {
-	client  cache.OPClientFunc
+	client  opclient.OPClientFunc
 	cache   cache.Cache
 	section string
 	logger  *slog.Logger
 }
 
 func New(
-	client cache.OPClientFunc,
+	client opclient.OPClientFunc,
 	cache cache.Cache,
 	section string,
 	logger *slog.Logger,

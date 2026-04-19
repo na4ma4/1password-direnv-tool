@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/na4ma4/1password-direnv-tool/internal/cache"
+	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 )
 
 type regoptions struct {
@@ -38,7 +39,7 @@ func WithModifiers(modifiers ...Modifier) regoptionsFunc {
 }
 
 type options struct {
-	client cache.OPClientFunc
+	client opclient.OPClientFunc
 	logger *slog.Logger
 	cache  cache.Cache
 }
@@ -63,7 +64,7 @@ func WithLogger(logger *slog.Logger) optionsFunc {
 // WithOnePasswordClient sets the 1Password client to be used by the generator.
 //
 //nolint:revive // WithOnePasswordClient is not intended to be used as an interface
-func WithOnePasswordClient(client cache.OPClientFunc) optionsFunc {
+func WithOnePasswordClient(client opclient.OPClientFunc) optionsFunc {
 	return func(o *options) {
 		o.client = client
 	}

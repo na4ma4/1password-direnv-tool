@@ -7,95 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/1password/onepassword-sdk-go"
-	"github.com/dosquad/go-cliversion"
+	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 	"github.com/na4ma4/go-slogtool"
 	"github.com/spf13/viper"
 )
-
-// OPClientFunc is a function type that returns a 1Password client. It is used to allow for
-// lazy initialization of the client and to inject a mock client for testing.
-type OPClientFunc func(context.Context) (*onepassword.Client, error)
-
-// lazyOPClient is a struct that holds a lazily initialized 1Password client and a mutex
-// for synchronizing access to it.
-type lazyOPClient struct {
-	lock   sync.Mutex
-	client *onepassword.Client
-}
-
-// lazyClient is a global variable for lazy initialization of the 1Password client. It is used by the
-// OnePasswordClientLazyInit function to ensure that the client is only initialized once and shared
-// across the application.
-//
-//nolint:gochecknoglobals // lazyClient is intended to be a global variable for lazy initialization
-var lazyClient = &lazyOPClient{}
-
-type newClientResult struct {
-	client *onepassword.Client
-	err    error
-}
-
-func newOnePasswordClientCancelable(ctx context.Context, accountName string) (*onepassword.Client, error) {
-	resultCh := make(chan newClientResult, 1)
-
-	go func() {
-		client, err := onepassword.NewClient(
-			ctx,
-			onepassword.WithDesktopAppIntegration(accountName),
-			onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
-		)
-
-		resultCh <- newClientResult{client: client, err: err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("creating 1Password client canceled: %w", ctx.Err())
-	case result := <-resultCh:
-		if result.err != nil {
-			return nil, fmt.Errorf("creating 1Password client: %w", result.err)
-		}
-
-		return result.client, nil
-	}
-}
-
-func OnePasswordClientLazyInit(_ context.Context, logger *slog.Logger) OPClientFunc {
-	accountName := viper.GetString("1password.account-name")
-
-	if accountName == "" {
-		accountName = "my"
-	}
-
-	return func(ctx context.Context) (*onepassword.Client, error) {
-		lazyClient.lock.Lock()
-		defer lazyClient.lock.Unlock()
-
-		if lazyClient.client != nil {
-			return lazyClient.client, nil
-		}
-
-		logger.DebugContext(ctx, "lazy initialization of 1Password client: started",
-			slog.String("account_name", accountName),
-		)
-		defer logger.DebugContext(ctx, "lazy initialization of 1Password client: finished",
-			slog.String("account_name", accountName),
-		)
-
-		var err error
-		lazyClient.client, err = newOnePasswordClientCancelable(ctx, accountName)
-		if err != nil {
-			logger.ErrorContext(ctx, "failed to create 1Password client", slogtool.ErrorAttr(err))
-			return nil, err
-		}
-
-		return lazyClient.client, nil
-	}
-}
 
 func jsonDecode[T any](data string) (T, error) {
 	var v T
@@ -103,11 +23,27 @@ func jsonDecode[T any](data string) (T, error) {
 	return v, err
 }
 
+// isTimeoutError checks if an error is a timeout error.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	errStr := err.Error()
+	return strings.Contains(errStr, "canceled") &&
+		(strings.Contains(errStr, "DeadlineExceeded") ||
+			strings.Contains(errStr, "context deadline exceeded"))
+}
+
 // resolveSecretCancelable wraps the secret resolution with explicit timeout handling.
 // This ensures the call returns even if the 1Password SDK doesn't properly respect context cancellation.
 func resolveSecretCancelable(
 	ctx context.Context,
-	client *onepassword.Client,
+	client opclient.Client,
 	secretRef string,
 ) (string, error) {
 	type result struct {
@@ -130,10 +66,28 @@ func resolveSecretCancelable(
 	}
 }
 
+// resolveSecretWithFallback resolves a secret using the socket API, with fallback to op CLI on timeout.
+func resolveSecretWithFallback(
+	ctx context.Context,
+	client opclient.Client,
+	secretRef string,
+	logger *slog.Logger,
+) (string, error) {
+	value, err := resolveSecretCancelable(ctx, client, secretRef)
+	if err != nil && isTimeoutError(err) {
+		logger.WarnContext(ctx, "socket API timeout, falling back to op CLI",
+			slog.String("secret_ref", secretRef),
+			slog.String("error", err.Error()),
+		)
+		return resolveSecretViaCLI(ctx, secretRef, logger)
+	}
+	return value, err
+}
+
 // getItemCancelable wraps the item retrieval with explicit timeout handling.
 func getItemCancelable(
 	ctx context.Context,
-	client *onepassword.Client,
+	client opclient.Client,
 	vaultID, itemID string,
 ) (onepassword.Item, error) {
 	type result struct {
@@ -156,10 +110,29 @@ func getItemCancelable(
 	}
 }
 
+// getItemWithFallback gets an item using the socket API, with fallback to op CLI on timeout.
+func getItemWithFallback(
+	ctx context.Context,
+	client opclient.Client,
+	vaultID, itemID string,
+	logger *slog.Logger,
+) (onepassword.Item, error) {
+	item, err := getItemCancelable(ctx, client, vaultID, itemID)
+	if err != nil && isTimeoutError(err) {
+		logger.WarnContext(ctx, "socket API timeout, falling back to op CLI",
+			slog.String("vault_id", vaultID),
+			slog.String("item_id", itemID),
+			slog.String("error", err.Error()),
+		)
+		return getItemViaCLI(ctx, vaultID, itemID, logger)
+	}
+	return item, err
+}
+
 // listVaultsCancelable wraps the vault list retrieval with explicit timeout handling.
 func listVaultsCancelable(
 	ctx context.Context,
-	client *onepassword.Client,
+	client opclient.Client,
 ) ([]onepassword.VaultOverview, error) {
 	type result struct {
 		vaults []onepassword.VaultOverview
@@ -181,10 +154,26 @@ func listVaultsCancelable(
 	}
 }
 
+// listVaultsWithFallback lists vaults using the socket API, with fallback to op CLI on timeout.
+func listVaultsWithFallback(
+	ctx context.Context,
+	client opclient.Client,
+	logger *slog.Logger,
+) ([]onepassword.VaultOverview, error) {
+	vaults, err := listVaultsCancelable(ctx, client)
+	if err != nil && isTimeoutError(err) {
+		logger.WarnContext(ctx, "socket API timeout, falling back to op CLI",
+			slog.String("error", err.Error()),
+		)
+		return listVaultsViaCLI(ctx, logger)
+	}
+	return vaults, err
+}
+
 // listItemsCancelable wraps the item list retrieval with explicit timeout handling.
 func listItemsCancelable(
 	ctx context.Context,
-	client *onepassword.Client,
+	client opclient.Client,
 	vaultID string,
 ) ([]onepassword.ItemOverview, error) {
 	type result struct {
@@ -207,11 +196,194 @@ func listItemsCancelable(
 	}
 }
 
+// listItemsWithFallback lists items using the socket API, with fallback to op CLI on timeout.
+func listItemsWithFallback(
+	ctx context.Context,
+	client opclient.Client,
+	vaultID string,
+	logger *slog.Logger,
+) ([]onepassword.ItemOverview, error) {
+	items, err := listItemsCancelable(ctx, client, vaultID)
+	if err != nil && isTimeoutError(err) {
+		logger.WarnContext(ctx, "socket API timeout, falling back to op CLI",
+			slog.String("vault_id", vaultID),
+			slog.String("error", err.Error()),
+		)
+		return listItemsViaCLI(ctx, vaultID, logger)
+	}
+	return items, err
+}
+
+// resolveSecretViaCLI resolves a secret reference using the op CLI tool.
+func resolveSecretViaCLI(ctx context.Context, secretRef string, logger *slog.Logger) (string, error) {
+	logger.InfoContext(ctx, "using op CLI for secret resolution", slog.String("secret_ref", secretRef))
+
+	accountName := viper.GetString("1password.account-name")
+	if accountName == "" {
+		accountName = "my"
+	}
+
+	args := []string{"read", secretRef, "--no-newline"}
+	if accountName != "" {
+		args = append([]string{"--account", accountName}, args...)
+	}
+
+	cmd := exec.CommandContext(ctx, "op", args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	start := time.Now()
+	err := cmd.Run()
+	duration := time.Since(start)
+
+	if err != nil {
+		return "", fmt.Errorf("op read failed after %v: %w (stderr: %s)", duration, err, stderr.String())
+	}
+
+	result := strings.TrimSpace(stdout.String())
+	logger.DebugContext(ctx, "op CLI secret resolution successful",
+		slog.String("secret_ref", secretRef),
+		slog.Duration("duration", duration),
+	)
+
+	return result, nil
+}
+
+// getItemViaCLI retrieves an item using the op CLI tool.
+func getItemViaCLI(ctx context.Context, vaultID, itemID string, logger *slog.Logger) (onepassword.Item, error) {
+	logger.InfoContext(ctx, "using op CLI for item retrieval",
+		slog.String("vault_id", vaultID),
+		slog.String("item_id", itemID),
+	)
+
+	accountName := viper.GetString("1password.account-name")
+	if accountName == "" {
+		accountName = "my"
+	}
+
+	args := []string{"item", "get", itemID, "--vault", vaultID, "--format", "json"}
+	if accountName != "" {
+		args = append([]string{"--account", accountName}, args...)
+	}
+
+	cmd := exec.CommandContext(ctx, "op", args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	start := time.Now()
+	runErr := cmd.Run()
+	duration := time.Since(start)
+
+	if runErr != nil {
+		return onepassword.Item{}, fmt.Errorf("failed op item get after %v: %w", duration, runErr)
+	}
+
+	var item onepassword.Item
+	if decodeErr := json.NewDecoder(&stdout).Decode(&item); decodeErr != nil {
+		return onepassword.Item{}, fmt.Errorf("failed to decode op item get response: %w", decodeErr)
+	}
+
+	logger.DebugContext(ctx, "op CLI item retrieval successful",
+		slog.String("vault_id", vaultID),
+		slog.String("item_id", itemID),
+		slog.Duration("duration", duration),
+	)
+
+	return item, nil
+}
+
+// listVaultsViaCLI lists vaults using the op CLI tool.
+func listVaultsViaCLI(ctx context.Context, logger *slog.Logger) ([]onepassword.VaultOverview, error) {
+	logger.InfoContext(ctx, "using op CLI for vault list")
+
+	accountName := viper.GetString("1password.account-name")
+	if accountName == "" {
+		accountName = "my"
+	}
+
+	args := []string{"vault", "list", "--format", "json"}
+	if accountName != "" {
+		args = append([]string{"--account", accountName}, args...)
+	}
+
+	cmd := exec.CommandContext(ctx, "op", args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	start := time.Now()
+	runErr := cmd.Run()
+	duration := time.Since(start)
+
+	if runErr != nil {
+		return nil, fmt.Errorf("op vault list failed after %v: %w (stderr: %s)", duration, runErr, stderr.String())
+	}
+
+	var vaults []onepassword.VaultOverview
+	if decodeErr := json.NewDecoder(&stdout).Decode(&vaults); decodeErr != nil {
+		return nil, fmt.Errorf("failed to decode op vault list response: %w", decodeErr)
+	}
+
+	logger.DebugContext(ctx, "op CLI vault list successful",
+		slog.Int("vault_count", len(vaults)),
+		slog.Duration("duration", duration),
+	)
+
+	return vaults, nil
+}
+
+// listItemsViaCLI lists items in a vault using the op CLI tool.
+func listItemsViaCLI(ctx context.Context, vaultID string, logger *slog.Logger) ([]onepassword.ItemOverview, error) {
+	logger.InfoContext(ctx, "using op CLI for item list", slog.String("vault_id", vaultID))
+
+	accountName := viper.GetString("1password.account-name")
+	if accountName == "" {
+		accountName = "my"
+	}
+
+	args := []string{"item", "list", "--vault", vaultID, "--format", "json"}
+	if accountName != "" {
+		args = append([]string{"--account", accountName}, args...)
+	}
+
+	cmd := exec.CommandContext(ctx, "op", args...)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	start := time.Now()
+	runErr := cmd.Run()
+	duration := time.Since(start)
+
+	if runErr != nil {
+		return nil, fmt.Errorf("op item list failed after %v: %w (stderr: %s)", duration, runErr, stderr.String())
+	}
+
+	var items []onepassword.ItemOverview
+	if decodeErr := json.NewDecoder(&stdout).Decode(&items); decodeErr != nil {
+		return nil, fmt.Errorf("failed to decode op item list response: %w", decodeErr)
+	}
+
+	logger.DebugContext(ctx, "op CLI item list successful",
+		slog.String("vault_id", vaultID),
+		slog.Int("item_count", len(items)),
+		slog.Duration("duration", duration),
+	)
+
+	return items, nil
+}
+
 func OnePasswordSecretResolve(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient OPClientFunc,
+	opClient opclient.OPClientFunc,
 	secretRef string,
 ) (string, error) {
 	if cc != nil {
@@ -227,7 +399,7 @@ func OnePasswordSecretResolve(
 		}
 	}
 
-	var client *onepassword.Client
+	var client opclient.Client
 	{
 		var err error
 		client, err = opClient(ctx)
@@ -239,7 +411,7 @@ func OnePasswordSecretResolve(
 	var item string
 	{
 		var err error
-		item, err = resolveSecretCancelable(ctx, client, secretRef)
+		item, err = resolveSecretWithFallback(ctx, client, secretRef, logger)
 		if err != nil {
 			return "", err
 		}
@@ -260,7 +432,7 @@ func OnePasswordGetItem(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient OPClientFunc,
+	opClient opclient.OPClientFunc,
 	vaultID, itemID string,
 ) (onepassword.Item, error) {
 	cacheKey := "item:" + vaultID + ":" + itemID
@@ -284,7 +456,7 @@ func OnePasswordGetItem(
 	}
 
 	logger.DebugContext(ctx, "initialising 1Password client")
-	var client *onepassword.Client
+	var client opclient.Client
 	{
 		var err error
 		client, err = opClient(ctx)
@@ -297,7 +469,7 @@ func OnePasswordGetItem(
 	var item onepassword.Item
 	{
 		var err error
-		item, err = getItemCancelable(ctx, client, vaultID, itemID)
+		item, err = getItemWithFallback(ctx, client, vaultID, itemID, logger)
 		if err != nil {
 			return onepassword.Item{}, err
 		}
@@ -327,7 +499,7 @@ func OnePasswordVaultList(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient OPClientFunc,
+	opClient opclient.OPClientFunc,
 ) ([]onepassword.VaultOverview, error) {
 	cacheKey := "vaults:list"
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
@@ -345,7 +517,7 @@ func OnePasswordVaultList(
 	}
 
 	logger.DebugContext(ctx, "initialising 1password client")
-	var client *onepassword.Client
+	var client opclient.Client
 	{
 		var err error
 		client, err = opClient(ctx)
@@ -358,7 +530,7 @@ func OnePasswordVaultList(
 	var vaults []onepassword.VaultOverview
 	{
 		var err error
-		vaults, err = listVaultsCancelable(ctx, client)
+		vaults, err = listVaultsWithFallback(ctx, client, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -386,7 +558,7 @@ func OnePasswordItemList(
 	ctx context.Context,
 	cc Cache,
 	logger *slog.Logger,
-	opClient OPClientFunc,
+	opClient opclient.OPClientFunc,
 	vaultID string,
 ) ([]onepassword.ItemOverview, error) {
 	cacheKey := "items:list:" + vaultID
@@ -407,7 +579,7 @@ func OnePasswordItemList(
 	}
 
 	logger.DebugContext(ctx, "initialising 1password client")
-	var client *onepassword.Client
+	var client opclient.Client
 	{
 		var err error
 		client, err = opClient(ctx)
@@ -420,7 +592,7 @@ func OnePasswordItemList(
 	var items []onepassword.ItemOverview
 	{
 		var err error
-		items, err = listItemsCancelable(ctx, client, vaultID)
+		items, err = listItemsWithFallback(ctx, client, vaultID, logger)
 		if err != nil {
 			return nil, err
 		}
