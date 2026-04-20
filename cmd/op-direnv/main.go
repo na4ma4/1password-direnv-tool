@@ -17,6 +17,7 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/cmdconst"
 	"github.com/na4ma4/1password-direnv-tool/internal/codec"
 	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
+	"github.com/na4ma4/1password-direnv-tool/internal/lock"
 	"github.com/na4ma4/1password-direnv-tool/internal/opclient"
 	"github.com/na4ma4/1password-direnv-tool/internal/openv"
 )
@@ -92,6 +93,13 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 
 	logger.InfoContext(ctx, "loading environment variables from 1Password", slog.String("item", itemRef.String()))
 
+	release, lockErr := acquireLock(ctx, logger, itemRef)
+	if lockErr != nil {
+		logger.ErrorContext(ctx, "failed to acquire file lock", slogtool.ErrorAttr(lockErr))
+		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, lockErr)
+	}
+	defer release()
+
 	lazyClient := opclient.OnePasswordClientLazyInit(ctx, logger)
 	section := viper.GetString("section")
 	ope := openv.New(lazyClient, cst, section, logger)
@@ -121,4 +129,47 @@ var ErrNoAccountName = errors.New(
 // shellQuote wraps a string in single quotes, escaping any existing single quotes.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// acquireLock obtains the per-item file lock (or a no-op lock when disabled)
+// and returns a release function to be deferred by the caller.
+func acquireLock(ctx context.Context, logger *slog.Logger, itemRef itemref.Ref) (func(), error) {
+	if !viper.GetBool("lock.enabled") {
+		logger.DebugContext(ctx, "file locking disabled")
+		return func() {}, nil
+	}
+
+	lockDir := viper.GetString("cache.path")
+
+	var l lock.Lock
+	{
+		var err error
+		if itemRef.IsEmpty() {
+			l, err = lock.Global(lockDir)
+		} else {
+			l, err = lock.ForItem(lockDir, itemRef.String())
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	lockCtx := ctx
+	if to := viper.GetDuration("lock.timeout"); to > 0 {
+		var cancel context.CancelFunc
+		lockCtx, cancel = context.WithTimeout(ctx, to)
+		defer cancel()
+	}
+
+	logger.DebugContext(ctx, "acquiring file lock", slog.String("dir", lockDir))
+
+	if err := l.Acquire(lockCtx); err != nil {
+		return nil, err
+	}
+
+	return func() {
+		if err := l.Release(); err != nil {
+			logger.WarnContext(ctx, "failed to release file lock", slogtool.ErrorAttr(err))
+		}
+	}, nil
 }

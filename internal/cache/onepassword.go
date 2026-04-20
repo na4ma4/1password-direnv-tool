@@ -125,7 +125,16 @@ func getItemWithFallback(
 			slog.String("item_id", itemID),
 			slog.String("error", err.Error()),
 		)
+
 		return getItemViaCLI(ctx, vaultID, itemID, logger)
+	} else if err != nil {
+		logger.WarnContext(ctx, "socket API error, not a timeout, returning error",
+			slog.String("vault_id", vaultID),
+			slog.String("item_id", itemID),
+			slog.String("error", err.Error()),
+		)
+
+		return onepassword.Item{}, err
 	}
 	return item, err
 }

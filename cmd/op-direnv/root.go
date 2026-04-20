@@ -53,6 +53,16 @@ func init() {
 	_ = viper.BindPFlag("cache.age", rootCmd.PersistentFlags().Lookup("cache-age"))
 	_ = viper.BindEnv("cache.age", "OP_CACHE_AGE")
 
+	rootCmd.PersistentFlags().Bool("lock", true,
+		"Serialize concurrent op-direnv invocations with a file lock")
+	_ = viper.BindPFlag("lock.enabled", rootCmd.PersistentFlags().Lookup("lock"))
+	_ = viper.BindEnv("lock.enabled", "OP_LOCK")
+
+	rootCmd.PersistentFlags().Duration("lock-timeout", 0,
+		"Max time to wait for the file lock (0 = use --timeout)")
+	_ = viper.BindPFlag("lock.timeout", rootCmd.PersistentFlags().Lookup("lock-timeout"))
+	_ = viper.BindEnv("lock.timeout", "OP_LOCK_TIMEOUT")
+
 	rootCmd.AddCommand(exportKeyCmd)
 	rootCmd.AddCommand(encodeCmd)
 	rootCmd.AddCommand(importKeyCmd)
