@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -17,7 +18,11 @@ import (
 	"github.com/na4ma4/1password-direnv-tool/internal/cmdconst"
 	"github.com/na4ma4/1password-direnv-tool/internal/codec"
 	"github.com/na4ma4/1password-direnv-tool/internal/itemref"
+	"github.com/na4ma4/1password-direnv-tool/internal/lazy"
 	"github.com/na4ma4/1password-direnv-tool/internal/openv"
+	"github.com/na4ma4/1password-direnv-tool/model"
+	onepassword "github.com/na4ma4/1password-direnv-tool/providers/1password"
+	protonpass "github.com/na4ma4/1password-direnv-tool/providers/protonpass"
 )
 
 const (
@@ -31,7 +36,54 @@ func init() {
 
 	rootCmd.PersistentFlags().DurationP("timeout", "t", defaultTimeout, "Timeout for operations")
 	_ = viper.BindPFlag("timeout", rootCmd.PersistentFlags().Lookup("timeout"))
-	_ = viper.BindEnv("timeout", "OP_TIMEOUT")
+}
+
+func setupCache(ctx context.Context, logger *slog.Logger) (cache.Cache, error) {
+	if !viper.GetBool("cache.enabled") {
+		logger.DebugContext(ctx, "caching disabled")
+		return cache.NewNoop(), nil
+	}
+
+	cachePath := viper.GetString("cache.path")
+	cst, err := cache.NewDisk(cachePath)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to initialize file cache", slogtool.ErrorAttr(err))
+		return nil, fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+	}
+
+	if err = cst.Iterate(ctx, cache.ExpireFunc(viper.GetDuration("cache.age"))); err != nil {
+		logger.ErrorContext(ctx, "failed to expire old cache entries", slogtool.ErrorAttr(err))
+		return nil, fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+	}
+
+	logger.DebugContext(ctx, "initialized file cache",
+		slog.String("cache_path", cachePath),
+		slog.Duration("cache_age", viper.GetDuration("cache.age")),
+	)
+
+	return cache.NewEncryption(cst, codec.Default), nil
+}
+
+func getProvider(
+	ctx context.Context,
+	logger *slog.Logger,
+	scheme string,
+	itemRef itemref.Ref,
+	cst cache.Cache,
+) (model.Provider, error) {
+	switch scheme {
+	case "pass":
+		return protonpass.NewProvider(logger, cst), nil
+	case "op":
+		client := cache.OnePasswordClientLazyInit(ctx, logger)
+		return onepassword.NewProvider(client, cst, logger), nil
+	default:
+		logger.ErrorContext(ctx, "unsupported provider scheme in item reference",
+			slog.String("scheme", scheme),
+		)
+		return nil, fmt.Errorf("%w: unsupported provider scheme %q in item reference %q",
+			cmdconst.ErrNoUsage, scheme, itemRef.String())
+	}
 }
 
 func mainCmd(cmd *cobra.Command, _ []string) error {
@@ -51,49 +103,56 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("%w%v", cmdconst.ErrNoUsage, "no codec available for decrypting item reference")
 	}
 
-	var cst cache.Cache
-	{
-		if viper.GetBool("cache.enabled") {
-			cachePath := viper.GetString("cache.path")
-			{
-				var err error
-				cst, err = cache.NewDisk(cachePath)
-				if err != nil {
-					logger.ErrorContext(ctx, "failed to initialize file cache", slogtool.ErrorAttr(err))
-					return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
-				}
-			}
-			if err := cst.Iterate(ctx, cache.ExpireFunc(viper.GetDuration("cache.age"))); err != nil {
-				logger.ErrorContext(ctx, "failed to expire old cache entries", slogtool.ErrorAttr(err))
-				return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
-			}
-			logger.DebugContext(ctx, "initialized file cache",
-				slog.String("cache_path", cachePath),
-				slog.Duration("cache_age", viper.GetDuration("cache.age")),
-			)
-
-			cst = cache.NewEncryption(cst, codec.Default)
-		} else {
-			cst = cache.NewNoop()
-			logger.DebugContext(ctx, "caching disabled")
-		}
+	cst, err := setupCache(ctx, logger)
+	if err != nil {
+		return err
 	}
 
-	var itemRef itemref.Ref
-	{
-		var err error
-		itemRef, err = itemref.GetRef(ctx, codec.Default)
-		if err != nil || itemRef.IsEmpty() {
-			logger.ErrorContext(ctx, "failed to get item reference from configuration", slogtool.ErrorAttr(err))
-			return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
-		}
+	itemRef, err := itemref.GetRef(ctx, codec.Default, nil)
+	if err != nil || itemRef.IsEmpty() {
+		logger.ErrorContext(ctx, "failed to get item reference from configuration", slogtool.ErrorAttr(err))
+		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 
-	logger.InfoContext(ctx, "loading environment variables from 1Password", slog.String("item", itemRef.String()))
+	logger.InfoContext(ctx, "loading environment variables", slog.String("item", itemRef.String()))
 
-	lazyClient := cache.OnePasswordClientLazyInit(ctx, logger)
+	refURL, err := url.Parse(itemRef.String())
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to parse item reference URI",
+			slog.String("ref", itemRef.String()),
+			slogtool.ErrorAttr(err),
+		)
+		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
+	}
+
+	scheme := refURL.Scheme
+
+	provider, err := getProvider(ctx, logger, scheme, itemRef, cst)
+	if err != nil {
+		return err
+	}
+
+	var opResolver, passResolver model.SecretResolver
+
+	opClient := cache.OnePasswordClientLazyInit(ctx, logger)
+
+	switch scheme {
+	case "op":
+		opResolver = provider.SecretResolver()
+		passResolver = lazy.NewResolver(func() (model.SecretResolver, error) {
+			p := protonpass.NewProvider(logger, cst)
+			return p.SecretResolver(), nil
+		})
+	case "pass":
+		opResolver = lazy.NewResolver(func() (model.SecretResolver, error) {
+			p := onepassword.NewProvider(opClient, cst, logger)
+			return p.SecretResolver(), nil
+		})
+		passResolver = provider.SecretResolver()
+	}
+
 	section := viper.GetString("section")
-	ope := openv.New(lazyClient, cst, section, logger)
+	ope := openv.New(provider, opResolver, passResolver, section, logger)
 
 	envVars, err := ope.GetEnvVars(ctx, itemRef)
 	if err != nil {
@@ -102,22 +161,18 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 	}
 
 	for env := range envVars {
-		// We are intentionally writing to stdout in a format that can be
-		// eval'd by the caller, so we need to allow this.
-		//nolint:gosec,nolintlint // Allow writing "export K=V" to stdout as this is the expected output of the command.
+		//nolint:gosec,nolintlint
 		fmt.Fprintf(os.Stdout, "export %s=%s\n", env.Name, shellQuote(env.Value))
 	}
 
 	return nil
 }
 
-// ErrNoAccountName is returned when no 1Password account name is configured.
 var ErrNoAccountName = errors.New(
 	"1Password account name not set, use --1password-account-name flag " +
 		"or 1PASSWORD_ACCOUNT_NAME env var",
 )
 
-// shellQuote wraps a string in single quotes, escaping any existing single quotes.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

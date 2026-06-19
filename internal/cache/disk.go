@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/na4ma4/go-permbits"
 )
 
 const (
@@ -41,7 +45,14 @@ func (d *Disk) Close(_ context.Context) error {
 }
 
 func (d *Disk) keyToFilename(key string) string {
-	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte(key)) + cacheFileExtension
+	p := make([]string, 0, strings.Count(key, "/")+1)
+	for s := range strings.SplitSeq(key, "/") {
+		p = append(p,
+			base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte(s)),
+		)
+	}
+
+	return filepath.Join(p...) + cacheFileExtension
 }
 
 func (d *Disk) Get(_ context.Context, key string) (string, time.Time, error) {
@@ -67,6 +78,12 @@ func (d *Disk) Get(_ context.Context, key string) (string, time.Time, error) {
 
 func (d *Disk) Set(_ context.Context, key string, value string) error {
 	filename := d.keyToFilename(key)
+	if err := os.MkdirAll(
+		filepath.Join(d.path, filepath.Dir(filename)),
+		permbits.UserAll,
+	); err != nil {
+		return err
+	}
 	f, err := d.root.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, cacheFileMode)
 	if err != nil {
 		return err

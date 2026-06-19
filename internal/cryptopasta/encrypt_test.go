@@ -25,6 +25,8 @@ import (
 )
 
 func TestEncryptDecryptGCM(t *testing.T) {
+	t.Parallel()
+
 	randomKey := cryptopasta.NewEncryptionKey()
 
 	gcmTests := []struct {

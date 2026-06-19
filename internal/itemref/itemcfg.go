@@ -24,11 +24,11 @@ type Ref interface {
 
 var ErrNoValidRef = errors.New("no valid reference found")
 
-func GetRef(ctx context.Context, c codec.Codec) (Ref, error) {
+func GetRef(ctx context.Context, c codec.Codec, args []string) (Ref, error) {
 	var r Ref
 	{
 		var err error
-		r, err = getRawRef(ctx)
+		r, err = getRawRef(ctx, args)
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +49,11 @@ func GetRef(ctx context.Context, c codec.Codec) (Ref, error) {
 	}
 }
 
-func getRawRef(ctx context.Context) (Ref, error) {
+func getRawRef(ctx context.Context, args []string) (Ref, error) {
+	if argRef, err := getArgumentConfig(ctx, args); err == nil {
+		return argRef, nil
+	}
+
 	if v, err := getEnv(); err == nil {
 		return v, nil
 	}

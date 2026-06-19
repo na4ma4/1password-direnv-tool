@@ -17,7 +17,6 @@ const (
 	cacheAgeDefault = 8 * time.Hour
 )
 
-// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:          "op-direnv",
 	Short:        "1Password direnv tool",
@@ -39,7 +38,7 @@ func init() {
 	_ = viper.BindEnv("1password.account-name", "1PASSWORD_ACCOUNT_NAME")
 
 	rootCmd.PersistentFlags().StringP("item", "i", "",
-		"1Password item reference (e.g. op://vault/item)")
+		"Item reference (e.g. op://vault/item)")
 	_ = viper.BindPFlag("item", rootCmd.PersistentFlags().Lookup("item"))
 	_ = viper.BindEnv("item", "OP_ITEM_UUID")
 
@@ -57,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(encodeCmd)
 	rootCmd.AddCommand(importKeyCmd)
 	rootCmd.AddCommand(cleanCmd)
+	rootCmd.AddCommand(k8sCmd)
 }
 
 func main() {

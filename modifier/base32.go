@@ -3,6 +3,8 @@ package modifier
 import (
 	"context"
 	"encoding/base32"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 type Base32Modifier struct {
@@ -21,8 +23,8 @@ func NewBase32(opts ...optionsFunc) *Base32Modifier {
 	return &Base32Modifier{opts: options}
 }
 
-func (m *Base32Modifier) Tags() Tags {
-	return Tags{"b32", "base32"}
+func (m *Base32Modifier) Tags() model.Tags {
+	return model.Tags{"b32", "base32"}
 }
 
 func (m *Base32Modifier) Apply(_ context.Context, value string) (string, error) {
