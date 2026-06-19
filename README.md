@@ -1,10 +1,16 @@
 # 1password-direnv-tool
 
-`op-direnv` loads environment variables from a 1Password item and prints shell-safe `export` statements for use with `direnv`.
+<!-- BADGIE TIME -->
+
+
+
+<!-- END BADGIE TIME -->
+
+`op-direnv` loads environment variables from a 1Password or Proton Pass item and prints shell-safe `export` statements for use with `direnv`.
 
 ## Why this tool
 
-- Keep secrets in 1Password instead of `.env` files
+- Keep secrets in 1Password or Proton Pass instead of `.env` files
 - Generate exports at shell load time via `direnv`
 - Support secret transforms through field modifiers
 - Cache lookups for faster repeated loads
@@ -12,7 +18,7 @@
 
 ## How it works
 
-`op-direnv` reads a 1Password item reference, fetches fields from a target section (default: `Environment`), then writes:
+`op-direnv` reads a 1Password (`op://`) or Proton Pass (`pass://`) item reference, fetches fields from a target section (default: `Environment`), then writes:
 
 ```sh
 export NAME='value'
@@ -23,7 +29,7 @@ You typically evaluate this output from `.envrc`.
 ## Requirements
 
 - Go `1.26+` (for building from source)
-- A configured 1Password desktop app session
+- A configured 1Password desktop app session (for `op://` references) or the Proton Pass CLI (`pass-cli`, for `pass://` references)
 - `direnv` installed and enabled in your shell
 
 ## Installation
@@ -44,7 +50,7 @@ go build -o op-direnv ./cmd/op-direnv
 
 ## Quick start with direnv
 
-1. In 1Password, create (or reuse) an item with a section named `Environment`.
+1. In 1Password (or Proton Pass), create (or reuse) an item with a section named `Environment`.
 2. Add fields in that section where each field title is an env var name.
 3. In your project, create `.envrc`:
 
@@ -65,15 +71,23 @@ You can also pass the item reference directly:
 eval "$(op-direnv --item op://Engineering/my-service-secrets)"
 ```
 
+For Proton Pass items, use a `pass://` reference instead:
+
+```sh
+eval "$(op-direnv --item pass://MyVault/my-service-secrets)"
+```
+
 ## Item reference format
 
-Supported item reference format:
+Supported item reference formats:
 
 ```text
 op://vault-name-or-id/item-name-or-id
+pass://vault-name-or-id/item-name-or-id
 ```
 
-`op-direnv` resolves both vault and item by ID or case-insensitive title.
+For `op://`, both vault and item are resolved by ID or case-insensitive title.
+For `pass://`, the vault is a Proton Pass share and the item is resolved by ID or case-insensitive title.
 
 ## Field mapping and modifiers
 
@@ -94,14 +108,29 @@ Only valid shell variable names are exported (`^[a-zA-Z_][a-zA-Z0-9_]*$`). Inval
 
 ### Supported modifiers
 
-- `1password`
+- `1password` / `op`
 	- Treat the field value as an `op://...` secret reference and resolve it.
+- `protonpass` / `pass`
+	- Treat the field value as a `pass://...` secret reference and resolve it via the Proton Pass CLI.
 - `b64` / `base64`
 	- Base64-encode the field value.
+- `b32` / `base32`
+	- Base32-encode the field value.
 - `op-tmpl` / `optmpl` / `1password-template`
 	- Resolve `{{ op://vault/item/field }}` templates embedded inside a larger string.
+- `pass-tmpl` / `passtmpl` / `protonpass-template`
+	- Resolve `{{ pass://vault/item/field }}` templates embedded inside a larger string.
 
 Modifiers are applied left-to-right.
+
+### Cross-provider references
+
+All modifiers are always available regardless of the item's primary provider. This means:
+
+- A **1Password** field value can reference a `pass://...` secret using the `:protonpass` or `:passtmpl` modifier.
+- A **Proton Pass** field value can reference an `op://...` secret using the `:1password` or `:optmpl` modifier.
+
+Providers are lazily initialized — the secondary provider is only created when its resolver is first invoked, so you don't pay for what you don't use.
 
 ## Encrypted item references
 
@@ -147,6 +176,7 @@ Commands:
 	encode      Encode a 1Password item reference
 	export-key  Export item-reference encryption key
 	import-key  Import item-reference encryption key
+	k8s         Run as a Kubernetes exec-plugin for kubectl authentication
 ```
 
 ### Main flags
@@ -165,6 +195,43 @@ Commands:
 	- Global operation timeout (default `2m`)
 - `-d, --debug`
 	- Debug logging
+
+## Kubernetes exec-plugin
+
+`op-direnv` can serve as a Kubernetes client credential provider (exec-plugin) for `kubectl` authentication. It reads client certificate, client key, and CA data from a 1Password or Proton Pass item and outputs an `ExecCredential`.
+
+### Configure kubectl
+
+Add the following to your kubeconfig:
+
+```yaml
+users:
+- name: my-cluster-user
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: op-direnv
+      args:
+        - k8s
+      env:
+        - name: OP_ITEM_UUID
+          value: op://Engineering/my-k8s-credential
+```
+
+### Item structure
+
+The `k8s` command reads a Kubernetes credential item. The item should contain:
+
+| Field name                | Purpose                    |
+| ------------------------- | -------------------------- |
+| `client-certificate`      | TLS client certificate     |
+| `client-key`              | TLS client key             |
+| `server`                  | (optional) API server URL  |
+| `certificate-authority-data` | (optional) CA cert     |
+
+Fields are resolved by short reference (case-insensitive). If `client-certificate` or `client-key` are missing the command will return an error; `server` and `certificate-authority-data` are optional.
+
+The command works with both `op://` and `pass://` item references.
 
 ## Configuration
 
@@ -244,6 +311,10 @@ The repository also includes Mage tasks under `magefiles/`.
 	- Ensure the 1Password desktop app is running and signed in.
 - **Unexpected values**
 	- Check modifier order in field titles.
+- **Cross-provider references not resolving**
+	- Confirm the referenced provider's CLI/tool is available (1Password desktop app for `op://`, `pass-cli` for `pass://`).
+- **Proton Pass not found**
+	- Ensure `pass-cli` is installed and in your `PATH` (on macOS Homebrew: `brew install proton-pass-cli`).
 
 ## License
 

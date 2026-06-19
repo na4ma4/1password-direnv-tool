@@ -9,6 +9,8 @@ import (
 func TestKeychainCodec(t *testing.T) {
 	t.Skip("This test creates and binds an option in the keychain to the test binary")
 
+	t.Parallel()
+
 	k := codec.NewKeychain()
 
 	key, err := k.GetKey()

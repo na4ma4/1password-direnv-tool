@@ -100,7 +100,9 @@ func (f *fakeCodec) ExportKey() (string, error) { return "", nil }
 func (f *fakeCodec) ImportKey(_ any) error { return nil }
 
 func TestEncryptionSetEncodesBeforeDelegating(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	fc := &fakeCache{}
 	ec := &fakeCodec{}
 	e := cache.NewEncryption(fc, ec)
@@ -119,7 +121,9 @@ func TestEncryptionSetEncodesBeforeDelegating(t *testing.T) {
 }
 
 func TestEncryptionGetDecodesValue(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	now := time.Now().UTC()
 	fc := &fakeCache{getValue: "enc:secret", getAge: now}
 	ec := &fakeCodec{}
@@ -140,7 +144,9 @@ func TestEncryptionGetDecodesValue(t *testing.T) {
 }
 
 func TestEncryptionIterateDecodesEachValue(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	now := time.Now().UTC()
 	fc := &fakeCache{
 		entries: []fakeEntry{{key: "k1", age: now, value: "enc:v1"}, {key: "k2", age: now, value: "enc:v2"}},
@@ -163,7 +169,9 @@ func TestEncryptionIterateDecodesEachValue(t *testing.T) {
 }
 
 func TestEncryptionReaderReturnsDecodedValue(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	fc := &fakeCache{getValue: "enc:hello", getAge: time.Now().UTC()}
 	ec := &fakeCodec{}
 	e := cache.NewEncryption(fc, ec)
@@ -185,7 +193,9 @@ func TestEncryptionReaderReturnsDecodedValue(t *testing.T) {
 }
 
 func TestEncryptionWriterBuffersAndEncryptsOnClose(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	fc := &fakeCache{}
 	ec := &fakeCodec{}
 	e := cache.NewEncryption(fc, ec)
@@ -233,7 +243,9 @@ func TestEncryptionWriterBuffersAndEncryptsOnClose(t *testing.T) {
 }
 
 func TestEncryptionGetReturnsDecodeError(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	failErr := errors.New("decode failed")
 	fc := &fakeCache{getValue: "enc:value", getAge: time.Now().UTC()}
 	ec := &fakeCodec{decodeErr: failErr}

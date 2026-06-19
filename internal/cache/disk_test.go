@@ -1,7 +1,6 @@
 package cache_test
 
 import (
-	"context"
 	"errors"
 	"io"
 	"testing"
@@ -10,7 +9,9 @@ import (
 )
 
 func TestDiskWriterReaderRoundTrip(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	d, err := cache.NewDisk(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewDisk() error = %v", err)
@@ -58,7 +59,9 @@ func TestDiskWriterReaderRoundTrip(t *testing.T) {
 }
 
 func TestDiskMissingKeyReturnsNotFound(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+
+	ctx := t.Context()
 	d, err := cache.NewDisk(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewDisk() error = %v", err)

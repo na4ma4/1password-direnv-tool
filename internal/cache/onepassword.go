@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/1password/onepassword-sdk-go"
-	"github.com/dosquad/go-cliversion"
 	"github.com/na4ma4/go-slogtool"
 	"github.com/spf13/viper"
 )
@@ -43,12 +42,7 @@ func newOnePasswordClientCancelable(ctx context.Context, accountName string) (*o
 	resultCh := make(chan newClientResult, 1)
 
 	go func() {
-		client, err := onepassword.NewClient(
-			ctx,
-			onepassword.WithDesktopAppIntegration(accountName),
-			onepassword.WithIntegrationInfo("1Password direnv tool", cliversion.Get().VersionString()),
-		)
-
+		client, err := onepasswordNewClient(ctx, accountName)
 		resultCh <- newClientResult{client: client, err: err}
 	}()
 
@@ -103,9 +97,9 @@ func jsonDecode[T any](data string) (T, error) {
 	return v, err
 }
 
-// resolveSecretCancelable wraps the secret resolution with explicit timeout handling.
+// onePasswordResolveSecretCancelable wraps the secret resolution with explicit timeout handling.
 // This ensures the call returns even if the 1Password SDK doesn't properly respect context cancellation.
-func resolveSecretCancelable(
+func onePasswordResolveSecretCancelable(
 	ctx context.Context,
 	client *onepassword.Client,
 	secretRef string,
@@ -130,8 +124,8 @@ func resolveSecretCancelable(
 	}
 }
 
-// getItemCancelable wraps the item retrieval with explicit timeout handling.
-func getItemCancelable(
+// onePasswordGetItemCancelable wraps the item retrieval with explicit timeout handling.
+func onePasswordGetItemCancelable(
 	ctx context.Context,
 	client *onepassword.Client,
 	vaultID, itemID string,
@@ -156,8 +150,35 @@ func getItemCancelable(
 	}
 }
 
-// listVaultsCancelable wraps the vault list retrieval with explicit timeout handling.
-func listVaultsCancelable(
+// onePasswordGetFileCancelable wraps the file retrieval with explicit timeout handling.
+func onePasswordGetFileCancelable(
+	ctx context.Context,
+	client *onepassword.Client,
+	vaultID, itemID string,
+	attr onepassword.FileAttributes,
+) ([]byte, error) {
+	type result struct {
+		file []byte
+		err  error
+	}
+
+	resultCh := make(chan result, 1)
+
+	go func() {
+		file, err := client.Items().Files().Read(ctx, vaultID, itemID, attr)
+		resultCh <- result{file: file, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("getting file %q from vault %q canceled: %w", itemID, vaultID, ctx.Err())
+	case res := <-resultCh:
+		return res.file, res.err
+	}
+}
+
+// onePasswordListVaultsCancelable wraps the vault list retrieval with explicit timeout handling.
+func onePasswordListVaultsCancelable(
 	ctx context.Context,
 	client *onepassword.Client,
 ) ([]onepassword.VaultOverview, error) {
@@ -181,8 +202,8 @@ func listVaultsCancelable(
 	}
 }
 
-// listItemsCancelable wraps the item list retrieval with explicit timeout handling.
-func listItemsCancelable(
+// onePasswordListItemsCancelable wraps the item list retrieval with explicit timeout handling.
+func onePasswordListItemsCancelable(
 	ctx context.Context,
 	client *onepassword.Client,
 	vaultID string,
@@ -239,7 +260,7 @@ func OnePasswordSecretResolve(
 	var item string
 	{
 		var err error
-		item, err = resolveSecretCancelable(ctx, client, secretRef)
+		item, err = onePasswordResolveSecretCancelable(ctx, client, secretRef)
 		if err != nil {
 			return "", err
 		}
@@ -263,7 +284,7 @@ func OnePasswordGetItem(
 	opClient OPClientFunc,
 	vaultID, itemID string,
 ) (onepassword.Item, error) {
-	cacheKey := "item:" + vaultID + ":" + itemID
+	cacheKey := "onepassword/item/" + vaultID + "/" + itemID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
 		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for item", slog.String("cache_key", cacheKey))
@@ -297,7 +318,7 @@ func OnePasswordGetItem(
 	var item onepassword.Item
 	{
 		var err error
-		item, err = getItemCancelable(ctx, client, vaultID, itemID)
+		item, err = onePasswordGetItemCancelable(ctx, client, vaultID, itemID)
 		if err != nil {
 			return onepassword.Item{}, err
 		}
@@ -329,7 +350,7 @@ func OnePasswordVaultList(
 	logger *slog.Logger,
 	opClient OPClientFunc,
 ) ([]onepassword.VaultOverview, error) {
-	cacheKey := "vaults:list"
+	cacheKey := "onepassword/vaults/list"
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
 		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for vault list", slog.String("cache_key", cacheKey))
@@ -358,7 +379,7 @@ func OnePasswordVaultList(
 	var vaults []onepassword.VaultOverview
 	{
 		var err error
-		vaults, err = listVaultsCancelable(ctx, client)
+		vaults, err = onePasswordListVaultsCancelable(ctx, client)
 		if err != nil {
 			return nil, err
 		}
@@ -389,7 +410,7 @@ func OnePasswordItemList(
 	opClient OPClientFunc,
 	vaultID string,
 ) ([]onepassword.ItemOverview, error) {
-	cacheKey := "items:list:" + vaultID
+	cacheKey := "onepassword/items/list/" + vaultID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
 		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for item list", slog.String("cache_key", cacheKey))
@@ -420,7 +441,7 @@ func OnePasswordItemList(
 	var items []onepassword.ItemOverview
 	{
 		var err error
-		items, err = listItemsCancelable(ctx, client, vaultID)
+		items, err = onePasswordListItemsCancelable(ctx, client, vaultID)
 		if err != nil {
 			return nil, err
 		}
@@ -443,4 +464,71 @@ func OnePasswordItemList(
 	}
 
 	return items, nil
+}
+
+func OnePasswordGetFileContent(
+	ctx context.Context,
+	cc Cache,
+	logger *slog.Logger,
+	opClient OPClientFunc,
+	vaultID, itemID string,
+	attr onepassword.FileAttributes,
+) ([]byte, error) {
+	cacheKey := "onepassword/file/" + vaultID + "/" + itemID + "/" + attr.ID
+	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
+		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
+			logger.DebugContext(ctx, "cache hit for item", slog.String("cache_key", cacheKey))
+			file, err := jsonDecode[[]byte](cached)
+			if err != nil {
+				logger.WarnContext(ctx, "cache value has unexpected type",
+					slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
+				)
+			} else {
+				return file, nil
+			}
+		} else if !errors.Is(getErr, ErrNotFound) {
+			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(getErr))
+		} else {
+			logger.DebugContext(ctx, "cache miss for item", slog.String("cache_key", cacheKey))
+		}
+	}
+
+	logger.DebugContext(ctx, "initialising 1Password client")
+	var client *onepassword.Client
+	{
+		var err error
+		client, err = opClient(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("initialising 1Password client: %w", err)
+		}
+	}
+
+	logger.DebugContext(ctx, "retrieving item")
+	var file []byte
+	{
+		var err error
+		file, err = onePasswordGetFileCancelable(ctx, client, vaultID, itemID, attr)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cc != nil {
+		logger.DebugContext(ctx, "saving item to cache", slog.String("cache_key", cacheKey))
+		buf := bytes.NewBuffer(nil)
+		if err := json.NewEncoder(buf).Encode(file); err != nil {
+			logger.ErrorContext(ctx, "failed to encode item for caching",
+				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
+			)
+			return file, nil
+		}
+
+		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
+			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
+		} else {
+			logger.DebugContext(ctx, "cached item", slog.String("cache_key", cacheKey))
+		}
+	}
+
+	return file, nil
 }
