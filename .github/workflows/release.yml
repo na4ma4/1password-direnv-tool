@@ -19,7 +19,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -45,7 +45,7 @@ jobs:
         run: gh release upload ${{ github.event.release.tag_name }} ./artifacts/archives/* --clobber
 
       - name: Checkout Homebrew Tap
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.HOMEBREW_REPO }}
           path: homebrew-tap
