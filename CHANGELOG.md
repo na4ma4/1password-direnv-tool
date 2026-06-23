@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/na4ma4/1password-direnv-tool/compare/v1.1.1...v1.2.0) (2026-06-23)
+
+
+### Features
+
+* add support for alternative password providers and k8s exec-plugin ([f4414eb](https://github.com/na4ma4/1password-direnv-tool/commit/f4414ebcf3f4714a734e59d130973f40b3271995))
+
 ## [1.1.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.1.0...v1.1.1) (2026-03-27)
 
 
