@@ -1,4 +1,4 @@
-name: release-please
+name: Push to main
 
 on:
   push:
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   release-please:
+    name: Release Please
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release-please.outputs.release_created }}
