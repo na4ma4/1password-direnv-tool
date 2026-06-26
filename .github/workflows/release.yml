@@ -1,4 +1,4 @@
-name: release
+name: Release
 
 on:
   release:
@@ -16,6 +16,7 @@ env:
 
 jobs:
   release-artifacts:
+    name: Release Artifacts
     runs-on: macos-latest
     steps:
       - name: Checkout
