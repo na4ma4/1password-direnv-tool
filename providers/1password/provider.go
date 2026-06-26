@@ -46,7 +46,7 @@ func (p *Provider) Name() string {
 }
 
 func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string) ([]model.EnvItem, error) {
-	vaultRef, itemName, err := p.parseRef(ref)
+	vaultRef, itemName, _, err := p.parseRef(ref)
 	if err != nil {
 		return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
 	}
@@ -87,14 +87,64 @@ type secretResolver struct {
 }
 
 func (r *secretResolver) ResolveSecret(ctx context.Context, ref string) (string, error) {
-	return cache.OnePasswordSecretResolve(ctx, r.p.cc, r.p.logger, r.p.client, ref)
+	r.p.logger.DebugContext(ctx, "resolving secret", slog.String("ref", ref))
+
+	var vaultRef, itemName, fieldRef string
+	{
+		var err error
+		vaultRef, itemName, fieldRef, err = r.p.parseRef(ref)
+		if err != nil {
+			return "", fmt.Errorf("parsing secret reference %q: %w", ref, err)
+		}
+	}
+
+	var vaultID string
+	{
+		var err error
+		vaultID, err = r.p.resolveVaultID(ctx, vaultRef)
+		if err != nil {
+			return "", fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+		}
+	}
+
+	var itemID string
+	{
+		var err error
+		itemID, err = r.p.resolveItemID(ctx, vaultID, itemName)
+		if err != nil {
+			return "", fmt.Errorf("resolving item %q: %w", itemName, err)
+		}
+	}
+
+	var item onepassword.Item
+	{
+		var err error
+		item, err = cache.OnePasswordGetItem(ctx, r.p.cc, r.p.logger, r.p.client, vaultID, itemID)
+		if err != nil {
+			return "", fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
+		}
+	}
+
+	if fieldRef != "" {
+		field, err := r.p.findFieldByShortRef(ctx, &item, fieldRef)
+		if err != nil {
+			return "", fmt.Errorf("finding field %q in item %q: %w", fieldRef, itemName, err)
+		}
+		return field.Value, nil
+	}
+
+	if len(item.Fields) > 0 {
+		return item.Fields[0].Value, nil
+	}
+
+	return "", fmt.Errorf("no fields found in item %q", itemName)
 }
 
 func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) (*model.ExecCredential, error) {
 	var vaultRef, itemName string
 	{
 		var err error
-		vaultRef, itemName, err = r.p.parseRef(ref)
+		vaultRef, itemName, _, err = r.p.parseRef(ref)
 		if err != nil {
 			return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
 		}
@@ -209,34 +259,51 @@ func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) 
 // 	return r.p.convertItemToModel(&item), nil
 // }
 
-func (p *Provider) parseRef(ref string) (string, string, error) {
+func (p *Provider) parseRef(ref string) (string, string, string, error) {
 	u, err := url.Parse(ref)
 	if err != nil {
-		return "", "", fmt.Errorf("%w: %w", ErrInvalidItemRef, err)
+		return "", "", "", fmt.Errorf("%w: %w", ErrInvalidItemRef, err)
 	}
 
 	if u.Scheme != "op" {
-		return "", "", fmt.Errorf("%w: expected op:// scheme, got %q", ErrInvalidItemRef, u.Scheme)
+		return "", "", "", fmt.Errorf("%w: expected op:// scheme, got %q", ErrInvalidItemRef, u.Scheme)
 	}
 
 	vaultRef := u.Host
-	itemRef := strings.TrimPrefix(u.Path, "/")
+	itemPath := strings.TrimPrefix(u.Path, "/")
 
-	if vaultRef == "" || itemRef == "" {
-		return "", "", fmt.Errorf("%w: expected op://vault/item format", ErrInvalidItemRef)
+	if vaultRef == "" || itemPath == "" {
+		return "", "", "", fmt.Errorf("%w: expected op://vault/item format", ErrInvalidItemRef)
 	}
 
-	//nolint:mnd // split into at most 2 parts, vault ref and item ref
-	parts := strings.SplitN(itemRef, "/", 2)
-	itemRef = parts[0]
+	//nolint:mnd // split into at most 2 parts, vault ref and item ref / field ref
+	parts := strings.SplitN(itemPath, "/", 2)
+	itemRef := parts[0]
+	var fieldRef string
+	if len(parts) > 1 {
+		fieldRef = parts[1]
+	}
 
-	return vaultRef, itemRef, nil
+	return vaultRef, itemRef, fieldRef, nil
 }
 
 func (p *Provider) resolveVaultID(ctx context.Context, vaultRef string) (string, error) {
 	vaults, err := cache.OnePasswordVaultList(ctx, p.cc, p.logger, p.client)
 	if err != nil {
 		return "", fmt.Errorf("listing vaults: %w", err)
+	}
+
+	// Special case for "Personal" vault, which is commonly used and can be identified by the "personal" tag or by its title. This allows users to reference the Personal vault without needing to know its ID.
+	// The check is case-insensitive to improve usability.
+	// If the vaultRef is "Personal" (case-insensitive), we look for a vault with the "personal" tag or with the title "Personal".
+	switch strings.ToLower(vaultRef) {
+	case "personal", "private":
+		for _, v := range vaults {
+			if strings.EqualFold(v.Title, "Personal") || strings.EqualFold(v.Title, "Private") ||
+				v.VaultType == onepassword.VaultTypePersonal {
+				return v.ID, nil
+			}
+		}
 	}
 
 	for _, v := range vaults {
