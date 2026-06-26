@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 var ErrNotFound = &NotFoundError{}
@@ -16,8 +18,10 @@ func (e *NotFoundError) Error() string {
 
 type Cache interface {
 	Close(ctx context.Context) error
-	Get(ctx context.Context, key string) (string, time.Time, error)
-	Set(ctx context.Context, key string, value string) error
+	// Get(ctx context.Context, key string) (string, time.Time, error)
+	Get(ctx context.Context, key string) (string, *model.FileList, time.Time, error)
+	// Set(ctx context.Context, key string, value string) error
+	Set(ctx context.Context, key string, value string) (*model.FileList, error)
 	Iterate(ctx context.Context, fn IterateFunc) error
 	Clear(ctx context.Context) error
 	Delete(ctx context.Context, key string) error
@@ -25,4 +29,4 @@ type Cache interface {
 	Writer(ctx context.Context, key string) (io.WriteCloser, error)
 }
 
-type IterateFunc func(key string, age time.Time, value string) error
+type IterateFunc func(key string, files *model.FileList, age time.Time, value string) error

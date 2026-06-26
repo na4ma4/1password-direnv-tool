@@ -24,18 +24,21 @@ func (r *Resolver) init() {
 	})
 }
 
-func (r *Resolver) ResolveSecret(ctx context.Context, ref string) (string, error) {
+func (r *Resolver) ResolveSecret(ctx context.Context, ref *model.SecretRef) error {
 	r.init()
 	if r.err != nil {
-		return "", r.err
+		return r.err
 	}
 	return r.resolver.ResolveSecret(ctx, ref)
 }
 
-func (r *Resolver) RetrieveK8sCredential(ctx context.Context, ref string) (*model.ExecCredential, error) {
+func (r *Resolver) RetrieveK8sCredential(
+	ctx context.Context,
+	ref string,
+) (*model.ExecCredential, *model.FileList, error) {
 	r.init()
 	if r.err != nil {
-		return nil, r.err
+		return nil, nil, r.err
 	}
 	return r.resolver.RetrieveK8sCredential(ctx, ref)
 }

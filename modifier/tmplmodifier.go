@@ -35,10 +35,10 @@ func newTemplateModifier(
 	return templateModifier{resolver: resolver, opts: options, pattern: pattern, tags: tags}
 }
 
-func (m *templateModifier) Apply(ctx context.Context, value string) (string, error) {
-	matches := m.pattern.FindAllStringSubmatchIndex(value, -1)
+func (m *templateModifier) Apply(ctx context.Context, value *model.SecretRef) error {
+	matches := m.pattern.FindAllStringSubmatchIndex(value.Value, -1)
 	if len(matches) == 0 {
-		return value, nil
+		return nil
 	}
 
 	var out strings.Builder
@@ -50,19 +50,21 @@ func (m *templateModifier) Apply(ctx context.Context, value string) (string, err
 		secretStart := match[2]
 		secretEnd := match[3]
 
-		out.WriteString(value[last:fullStart])
+		out.WriteString(value.Value[last:fullStart])
 
-		secretRef := value[secretStart:secretEnd]
-		resolved, err := m.resolver.ResolveSecret(ctx, secretRef)
+		secretRef := &model.SecretRef{Value: value.Value[secretStart:secretEnd]}
+		err := m.resolver.ResolveSecret(ctx, secretRef)
 		if err != nil {
-			return "", err
+			return err
 		}
 
-		out.WriteString(resolved)
+		value.MergeFiles(secretRef.Files)
+		out.WriteString(secretRef.Value)
 		last = fullEnd
 	}
 
-	out.WriteString(value[last:])
+	out.WriteString(value.Value[last:])
 
-	return out.String(), nil
+	value.Value = out.String()
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/na4ma4/1password-direnv-tool/internal/cache"
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 type fakeCache struct {
@@ -25,21 +26,22 @@ type fakeCache struct {
 
 type fakeEntry struct {
 	key   string
+	files *model.FileList
 	age   time.Time
 	value string
 }
 
 func (f *fakeCache) Close(_ context.Context) error { return nil }
 
-func (f *fakeCache) Get(_ context.Context, _ string) (string, time.Time, error) {
-	return f.getValue, f.getAge, f.getErr
+func (f *fakeCache) Get(_ context.Context, _ string) (string, *model.FileList, time.Time, error) {
+	return f.getValue, nil, f.getAge, f.getErr
 }
 
-func (f *fakeCache) Set(_ context.Context, key string, value string) error {
+func (f *fakeCache) Set(_ context.Context, key string, value string) (*model.FileList, error) {
 	f.setCalls++
 	f.setKey = key
 	f.setValue = value
-	return f.setErr
+	return nil, f.setErr
 }
 
 func (f *fakeCache) Iterate(_ context.Context, fn cache.IterateFunc) error {
@@ -48,7 +50,7 @@ func (f *fakeCache) Iterate(_ context.Context, fn cache.IterateFunc) error {
 	}
 
 	for _, entry := range f.entries {
-		if err := fn(entry.key, entry.age, entry.value); err != nil {
+		if err := fn(entry.key, entry.files, entry.age, entry.value); err != nil {
 			return err
 		}
 	}
@@ -107,7 +109,7 @@ func TestEncryptionSetEncodesBeforeDelegating(t *testing.T) {
 	ec := &fakeCodec{}
 	e := cache.NewEncryption(fc, ec)
 
-	if err := e.Set(ctx, "k", "plaintext"); err != nil {
+	if _, err := e.Set(ctx, "k", "plaintext"); err != nil {
 		t.Fatalf("Set() error = %v", err)
 	}
 
@@ -129,7 +131,7 @@ func TestEncryptionGetDecodesValue(t *testing.T) {
 	ec := &fakeCodec{}
 	e := cache.NewEncryption(fc, ec)
 
-	got, age, err := e.Get(ctx, "k")
+	got, _, age, err := e.Get(ctx, "k")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
@@ -155,7 +157,7 @@ func TestEncryptionIterateDecodesEachValue(t *testing.T) {
 	e := cache.NewEncryption(fc, ec)
 
 	seen := map[string]string{}
-	err := e.Iterate(ctx, func(key string, _ time.Time, value string) error {
+	err := e.Iterate(ctx, func(key string, _ *model.FileList, _ time.Time, value string) error {
 		seen[key] = value
 		return nil
 	})
@@ -251,7 +253,7 @@ func TestEncryptionGetReturnsDecodeError(t *testing.T) {
 	ec := &fakeCodec{decodeErr: failErr}
 	e := cache.NewEncryption(fc, ec)
 
-	if _, _, err := e.Get(ctx, "k"); !errors.Is(err, failErr) {
+	if _, _, _, err := e.Get(ctx, "k"); !errors.Is(err, failErr) {
 		t.Fatalf("Get() error = %v, want %v", err, failErr)
 	}
 }

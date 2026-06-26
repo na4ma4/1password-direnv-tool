@@ -45,34 +45,52 @@ func (p *Provider) Name() string {
 	return "1password"
 }
 
-func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string) ([]model.EnvItem, error) {
-	vaultRef, itemName, _, err := p.parseRef(ref)
-	if err != nil {
-		return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
+func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string) ([]model.EnvVar, error) {
+	var vaultRef, itemName string
+	{
+		var err error
+		vaultRef, itemName, _, err = p.parseRef(ref)
+		if err != nil {
+			return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
+		}
 	}
 
 	p.logger.DebugContext(ctx, "resolving vault", slog.String("vault", vaultRef))
 
-	vaultID, err := p.resolveVaultID(ctx, vaultRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+	fileList := &model.FileList{}
+
+	var vaultID string
+	{
+		var err error
+		var files *model.FileList
+		vaultID, files, err = p.resolveVaultID(ctx, vaultRef)
+		if err != nil {
+			return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+		}
+		fileList.Merge(files)
 	}
 
 	p.logger.DebugContext(ctx, "resolving item", slog.String("item", itemName), slog.String("vault_id", vaultID))
 
-	itemID, err := p.resolveItemID(ctx, vaultID, itemName)
-	if err != nil {
-		return nil, fmt.Errorf("resolving item %q: %w", itemName, err)
+	var itemID string
+	{
+		var err error
+		var files *model.FileList
+		itemID, files, err = p.resolveItemID(ctx, vaultID, itemName)
+		if err != nil {
+			return nil, fmt.Errorf("resolving item %q: %w", itemName, err)
+		}
+		fileList.Merge(files)
 	}
 
 	p.logger.DebugContext(ctx, "getting item", slog.String("item_id", itemID), slog.String("vault_id", vaultID))
 
-	item, err := cache.OnePasswordGetItem(ctx, p.cc, p.logger, p.client, vaultID, itemID)
+	item, files, err := cache.OnePasswordGetItem(ctx, p.cc, p.logger, p.client, vaultID, itemID)
 	if err != nil {
 		return nil, fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
 	}
 
-	return p.processItemFields(ctx, &item, section)
+	return p.processItemFields(ctx, &item, fileList.Merge(files), section)
 }
 
 func (p *Provider) SecretResolver() model.SecretResolver {
@@ -86,79 +104,93 @@ type secretResolver struct {
 	// logger *slog.Logger
 }
 
-func (r *secretResolver) ResolveSecret(ctx context.Context, ref string) (string, error) {
-	r.p.logger.DebugContext(ctx, "resolving secret", slog.String("ref", ref))
+func (r *secretResolver) ResolveSecret(ctx context.Context, ref *model.SecretRef) error {
+	r.p.logger.DebugContext(ctx, "resolving secret", slog.String("ref", ref.Value))
 
 	var vaultRef, itemName, fieldRef string
 	{
 		var err error
-		vaultRef, itemName, fieldRef, err = r.p.parseRef(ref)
+		vaultRef, itemName, fieldRef, err = r.p.parseRef(ref.GetValue())
 		if err != nil {
-			return "", fmt.Errorf("parsing secret reference %q: %w", ref, err)
+			return fmt.Errorf("parsing secret reference %q: %w", ref.Value, err)
 		}
 	}
 
 	var vaultID string
 	{
 		var err error
-		vaultID, err = r.p.resolveVaultID(ctx, vaultRef)
+		var files *model.FileList
+		vaultID, files, err = r.p.resolveVaultID(ctx, vaultRef)
 		if err != nil {
-			return "", fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+			return fmt.Errorf("resolving vault %q: %w", vaultRef, err)
 		}
+		ref.MergeFiles(files)
 	}
 
 	var itemID string
 	{
 		var err error
-		itemID, err = r.p.resolveItemID(ctx, vaultID, itemName)
+		var files *model.FileList
+		itemID, files, err = r.p.resolveItemID(ctx, vaultID, itemName)
 		if err != nil {
-			return "", fmt.Errorf("resolving item %q: %w", itemName, err)
+			return fmt.Errorf("resolving item %q: %w", itemName, err)
 		}
+		ref.MergeFiles(files)
 	}
 
 	var item onepassword.Item
 	{
 		var err error
-		item, err = cache.OnePasswordGetItem(ctx, r.p.cc, r.p.logger, r.p.client, vaultID, itemID)
+		var files *model.FileList
+		item, files, err = cache.OnePasswordGetItem(ctx, r.p.cc, r.p.logger, r.p.client, vaultID, itemID)
 		if err != nil {
-			return "", fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
+			return fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
 		}
+		ref.MergeFiles(files)
 	}
 
 	if fieldRef != "" {
 		field, err := r.p.findFieldByShortRef(ctx, &item, fieldRef)
 		if err != nil {
-			return "", fmt.Errorf("finding field %q in item %q: %w", fieldRef, itemName, err)
+			return fmt.Errorf("finding field %q in item %q: %w", fieldRef, itemName, err)
 		}
-		return field.Value, nil
+		ref.Value = field.Value
+		return nil
 	}
 
 	if len(item.Fields) > 0 {
-		return item.Fields[0].Value, nil
+		ref.Value = item.Fields[0].Value
+		return nil
 	}
 
-	return "", fmt.Errorf("no fields found in item %q", itemName)
+	return fmt.Errorf("no fields found in item %q", itemName)
 }
 
-func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) (*model.ExecCredential, error) {
+func (r *secretResolver) RetrieveK8sCredential(
+	ctx context.Context,
+	ref string,
+) (*model.ExecCredential, *model.FileList, error) {
 	var vaultRef, itemName string
 	{
 		var err error
 		vaultRef, itemName, _, err = r.p.parseRef(ref)
 		if err != nil {
-			return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
+			return nil, nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
 		}
 	}
 
 	r.p.logger.DebugContext(ctx, "resolving vault for k8s credential", slog.String("vault", vaultRef))
+	fileList := &model.FileList{}
 
 	var vaultID string
 	{
 		var err error
-		vaultID, err = r.p.resolveVaultID(ctx, vaultRef)
+		var files *model.FileList
+		vaultID, files, err = r.p.resolveVaultID(ctx, vaultRef)
 		if err != nil {
-			return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+			return nil, nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
 		}
+		fileList.Merge(files)
 	}
 
 	r.p.logger.DebugContext(
@@ -171,10 +203,12 @@ func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) 
 	var itemID string
 	{
 		var err error
-		itemID, err = r.p.resolveItemID(ctx, vaultID, itemName)
+		var files *model.FileList
+		itemID, files, err = r.p.resolveItemID(ctx, vaultID, itemName)
 		if err != nil {
-			return nil, fmt.Errorf("resolving item %q: %w", itemName, err)
+			return nil, nil, fmt.Errorf("resolving item %q: %w", itemName, err)
 		}
+		fileList.Merge(files)
 	}
 
 	r.p.logger.DebugContext(
@@ -187,10 +221,12 @@ func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) 
 	var item onepassword.Item
 	{
 		var err error
-		item, err = cache.OnePasswordGetItem(ctx, r.p.cc, r.p.logger, r.p.client, vaultID, itemID)
+		var files *model.FileList
+		item, files, err = cache.OnePasswordGetItem(ctx, r.p.cc, r.p.logger, r.p.client, vaultID, itemID)
 		if err != nil {
-			return nil, fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
+			return nil, nil, fmt.Errorf("getting item %q from vault %q: %w", itemID, vaultID, err)
 		}
+		fileList.Merge(files)
 	}
 
 	o := model.NewExecCredential()
@@ -200,33 +236,36 @@ func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) 
 	}
 
 	{
-		file, err := r.p.getFileContentByName(ctx, &item, "client.pem")
+		file, files, err := r.p.getFileContentByName(ctx, &item, "client.pem")
 		if err != nil {
-			return nil, fmt.Errorf("finding client certificate file(client.pem): %w", err)
+			return nil, nil, fmt.Errorf("finding client certificate file(client.pem): %w", err)
 		}
+		fileList.Merge(files)
 
 		o.Status.ClientCertificateData = string(file)
 	}
 
 	{
-		file, err := r.p.getFileContentByName(ctx, &item, "client-key.pem")
+		file, files, err := r.p.getFileContentByName(ctx, &item, "client-key.pem")
 		if err != nil {
-			return nil, fmt.Errorf("finding client key file(client-key.pem): %w", err)
+			return nil, nil, fmt.Errorf("finding client key file(client-key.pem): %w", err)
 		}
+		fileList.Merge(files)
 
 		o.Status.ClientKeyData = string(file)
 	}
 
 	{
-		file, err := r.p.getFileContentByName(ctx, &item, "ca.pem")
+		file, files, err := r.p.getFileContentByName(ctx, &item, "ca.pem")
 		if err != nil {
-			return nil, fmt.Errorf("finding CA certificate file(ca.pem): %w", err)
+			return nil, nil, fmt.Errorf("finding CA certificate file(ca.pem): %w", err)
 		}
+		fileList.Merge(files)
 
 		o.Spec.Cluster.CertificateAuthorityData = base64.StdEncoding.EncodeToString(file)
 	}
 
-	return o, nil
+	return o, fileList, nil
 }
 
 // func (r *secretResolver) GetItem(ctx context.Context, ref string) (*model.OnePasswordItem, error) {
@@ -287,10 +326,10 @@ func (p *Provider) parseRef(ref string) (string, string, string, error) {
 	return vaultRef, itemRef, fieldRef, nil
 }
 
-func (p *Provider) resolveVaultID(ctx context.Context, vaultRef string) (string, error) {
-	vaults, err := cache.OnePasswordVaultList(ctx, p.cc, p.logger, p.client)
+func (p *Provider) resolveVaultID(ctx context.Context, vaultRef string) (string, *model.FileList, error) {
+	vaults, files, err := cache.OnePasswordVaultList(ctx, p.cc, p.logger, p.client)
 	if err != nil {
-		return "", fmt.Errorf("listing vaults: %w", err)
+		return "", nil, fmt.Errorf("listing vaults: %w", err)
 	}
 
 	// Special case for "Personal" vault, which is commonly used and can be identified by the "personal" tag or by its title. This allows users to reference the Personal vault without needing to know its ID.
@@ -301,46 +340,47 @@ func (p *Provider) resolveVaultID(ctx context.Context, vaultRef string) (string,
 		for _, v := range vaults {
 			if strings.EqualFold(v.Title, "Personal") || strings.EqualFold(v.Title, "Private") ||
 				v.VaultType == onepassword.VaultTypePersonal {
-				return v.ID, nil
+				return v.ID, files, nil
 			}
 		}
 	}
 
 	for _, v := range vaults {
 		if v.ID == vaultRef || strings.EqualFold(v.Title, vaultRef) {
-			return v.ID, nil
+			return v.ID, files, nil
 		}
 	}
 
-	return "", fmt.Errorf("%w: %q", ErrVaultNotFound, vaultRef)
+	return "", nil, fmt.Errorf("%w: %q", ErrVaultNotFound, vaultRef)
 }
 
-func (p *Provider) resolveItemID(ctx context.Context, vaultID, itemRef string) (string, error) {
-	items, err := cache.OnePasswordItemList(ctx, p.cc, p.logger, p.client, vaultID)
+func (p *Provider) resolveItemID(ctx context.Context, vaultID, itemRef string) (string, *model.FileList, error) {
+	items, files, err := cache.OnePasswordItemList(ctx, p.cc, p.logger, p.client, vaultID)
 	if err != nil {
-		return "", fmt.Errorf("listing items in vault %q: %w", vaultID, err)
+		return "", nil, fmt.Errorf("listing items in vault %q: %w", vaultID, err)
 	}
 
 	for _, it := range items {
 		if it.ID == itemRef || strings.EqualFold(it.Title, itemRef) {
-			return it.ID, nil
+			return it.ID, files, nil
 		}
 	}
 
-	return "", fmt.Errorf("%w: %q in vault %q", ErrItemNotFound, itemRef, vaultID)
+	return "", nil, fmt.Errorf("%w: %q in vault %q", ErrItemNotFound, itemRef, vaultID)
 }
 
 func (p *Provider) processItemFields(
 	ctx context.Context,
 	item *onepassword.Item,
+	files *model.FileList,
 	section string,
-) ([]model.EnvItem, error) {
+) ([]model.EnvVar, error) {
 	sectionIDToTitle := make(map[string]string, len(item.Sections))
 	for _, s := range item.Sections {
 		sectionIDToTitle[s.ID] = s.Title
 	}
 
-	var result []model.EnvItem
+	var result []model.EnvVar
 
 	for _, field := range item.Fields {
 		if field.SectionID == nil || !strings.EqualFold(sectionIDToTitle[*field.SectionID], section) {
@@ -364,9 +404,10 @@ func (p *Provider) processItemFields(
 			slog.String("modifiers", strings.Join(modifiers, ",")),
 		)
 
-		result = append(result, model.EnvItem{
+		result = append(result, &model.EnvItem{
 			Name:      varName,
 			Value:     field.Value,
+			FileList:  files,
 			Modifiers: modifiers,
 		})
 	}
@@ -412,21 +453,33 @@ func (p *Provider) findFieldByShortRef(
 	)
 }
 
-func (p *Provider) getFileContentByName(ctx context.Context, item *onepassword.Item, name string) ([]byte, error) {
+func (p *Provider) getFileContentByName(
+	ctx context.Context,
+	item *onepassword.Item,
+	name string,
+) ([]byte, *model.FileList, error) {
 	if item.Document != nil && strings.EqualFold(item.Document.Name, name) {
-		d, err := cache.OnePasswordGetFileContent(ctx, p.cc, p.logger, p.client, item.VaultID, item.ID, *item.Document)
+		d, files, err := cache.OnePasswordGetFileContent(
+			ctx,
+			p.cc,
+			p.logger,
+			p.client,
+			item.VaultID,
+			item.ID,
+			*item.Document,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("getting file content for document %q: %w", name, err)
+			return nil, nil, fmt.Errorf("getting file content for document %q: %w", name, err)
 		}
 
-		return d, nil
+		return d, files, nil
 	}
 
 	for _, f := range item.Files {
 		// log.Printf("checking file %q for name %q", f.Attributes.Name, name)
 		// log.Printf("file: %+v", f)
 		if strings.EqualFold(f.Attributes.Name, name) {
-			d, err := cache.OnePasswordGetFileContent(
+			d, files, err := cache.OnePasswordGetFileContent(
 				ctx,
 				p.cc,
 				p.logger,
@@ -436,14 +489,14 @@ func (p *Provider) getFileContentByName(ctx context.Context, item *onepassword.I
 				f.Attributes,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("getting file content for file %q: %w", name, err)
+				return nil, nil, fmt.Errorf("getting file content for file %q: %w", name, err)
 			}
 
-			return d, nil
+			return d, files, nil
 		}
 	}
 
-	return nil, fmt.Errorf("%w: no file with name %q", ErrItemNotFound, name)
+	return nil, nil, fmt.Errorf("%w: no file with name %q", ErrItemNotFound, name)
 }
 
 // func (p *Provider) convertItemToK8sCredential(ctx context.Context, item *onepassword.Item) (*model.ExecCredential, error) {

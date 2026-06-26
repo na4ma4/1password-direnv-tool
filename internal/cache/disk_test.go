@@ -48,7 +48,7 @@ func TestDiskWriterReaderRoundTrip(t *testing.T) {
 		t.Fatalf("Reader() value = %q, want %q", string(b), "disk-value")
 	}
 
-	v, _, err := d.Get(ctx, "roundtrip-key")
+	v, _, _, err := d.Get(ctx, "roundtrip-key")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
@@ -73,7 +73,7 @@ func TestDiskMissingKeyReturnsNotFound(t *testing.T) {
 		t.Fatalf("Reader() error = %v, want %v", readErr, cache.ErrNotFound)
 	}
 
-	_, _, getErr := d.Get(ctx, "missing-key")
+	_, _, _, getErr := d.Get(ctx, "missing-key")
 	if !errors.Is(getErr, cache.ErrNotFound) {
 		t.Fatalf("Get() error = %v, want %v", getErr, cache.ErrNotFound)
 	}

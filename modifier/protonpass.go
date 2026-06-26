@@ -25,11 +25,11 @@ func (m *ProtonPassModifier) Tags() model.Tags {
 	return model.Tags{"protonpass", "pass"}
 }
 
-func (m *ProtonPassModifier) Apply(ctx context.Context, value string) (string, error) {
-	resolved, err := m.resolver.ResolveSecret(ctx, value)
+func (m *ProtonPassModifier) Apply(ctx context.Context, value *model.SecretRef) error {
+	err := m.resolver.ResolveSecret(ctx, value)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return resolved, nil
+	return nil
 }

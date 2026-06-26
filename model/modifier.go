@@ -7,7 +7,7 @@ import (
 
 type Modifier interface {
 	Tags() Tags
-	Apply(ctx context.Context, value string) (string, error)
+	Apply(ctx context.Context, value *SecretRef) error
 }
 
 type Tags []string

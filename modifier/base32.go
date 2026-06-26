@@ -27,7 +27,8 @@ func (m *Base32Modifier) Tags() model.Tags {
 	return model.Tags{"b32", "base32"}
 }
 
-func (m *Base32Modifier) Apply(_ context.Context, value string) (string, error) {
-	encoded := base32.StdEncoding.EncodeToString([]byte(value))
-	return encoded, nil
+func (m *Base32Modifier) Apply(_ context.Context, value *model.SecretRef) error {
+	encoded := base32.StdEncoding.EncodeToString([]byte(value.Value))
+	value.Value = encoded
+	return nil
 }

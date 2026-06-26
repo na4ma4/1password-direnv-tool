@@ -5,20 +5,14 @@ import (
 )
 
 type SecretResolver interface {
-	ResolveSecret(ctx context.Context, ref string) (string, error)
-	RetrieveK8sCredential(ctx context.Context, ref string) (*ExecCredential, error)
-}
-
-type EnvItem struct {
-	Name      string
-	Value     string
-	Modifiers []string
+	ResolveSecret(ctx context.Context, ref *SecretRef) error
+	RetrieveK8sCredential(ctx context.Context, ref string) (*ExecCredential, *FileList, error)
 }
 
 type Provider interface {
 	Name() string
 
-	LookupEnvVars(ctx context.Context, ref string, section string) ([]EnvItem, error)
+	LookupEnvVars(ctx context.Context, ref string, section string) ([]EnvVar, error)
 
 	SecretResolver() SecretResolver
 }

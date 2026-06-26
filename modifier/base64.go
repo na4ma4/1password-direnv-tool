@@ -27,7 +27,8 @@ func (m *Base64Modifier) Tags() model.Tags {
 	return model.Tags{"b64", "base64"}
 }
 
-func (m *Base64Modifier) Apply(_ context.Context, value string) (string, error) {
-	encoded := base64.StdEncoding.EncodeToString([]byte(value))
-	return encoded, nil
+func (m *Base64Modifier) Apply(_ context.Context, value *model.SecretRef) error {
+	encoded := base64.StdEncoding.EncodeToString([]byte(value.Value))
+	value.Value = encoded
+	return nil
 }

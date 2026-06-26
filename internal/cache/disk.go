@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/na4ma4/go-permbits"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 const (
@@ -55,43 +57,47 @@ func (d *Disk) keyToFilename(key string) string {
 	return filepath.Join(p...) + cacheFileExtension
 }
 
-func (d *Disk) Get(_ context.Context, key string) (string, time.Time, error) {
+func (d *Disk) Get(_ context.Context, key string) (string, *model.FileList, time.Time, error) {
 	filename := d.keyToFilename(key)
+	fileList := model.NewFileList(d.path)
+	fileList.Append(filename)
 	f, err := d.root.OpenFile(filename, os.O_RDONLY, cacheFileMode)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
+		return "", fileList, time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
+		return "", fileList, time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 
 	b, err := d.root.ReadFile(filename)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
+		return "", fileList, time.Time{}, fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 
-	return string(b), info.ModTime(), nil
+	return string(b), fileList, info.ModTime(), nil
 }
 
-func (d *Disk) Set(_ context.Context, key string, value string) error {
+func (d *Disk) Set(_ context.Context, key string, value string) (*model.FileList, error) {
 	filename := d.keyToFilename(key)
+	fileList := model.NewFileList(d.path)
+	fileList.Append(filename)
 	if err := os.MkdirAll(
 		filepath.Join(d.path, filepath.Dir(filename)),
 		permbits.UserAll,
 	); err != nil {
-		return err
+		return fileList, err
 	}
 	f, err := d.root.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, cacheFileMode)
 	if err != nil {
-		return err
+		return fileList, err
 	}
 	defer f.Close()
 
 	_, err = f.WriteString(value)
-	return err
+	return fileList, err
 }
 
 func (d *Disk) Reader(_ context.Context, key string) (io.ReadCloser, error) {
@@ -158,15 +164,16 @@ func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
 
 		var value string
 		var age time.Time
+		var fileList *model.FileList
 		{
 			var err error
-			value, age, err = d.Get(ctx, key)
+			value, fileList, age, err = d.Get(ctx, key)
 			if err != nil {
 				continue
 			}
 		}
 
-		if err := fn(key, age, value); err != nil {
+		if err := fn(key, fileList, age, value); err != nil {
 			if deleteErr, ok := errors.AsType[DeleteError](err); ok {
 				_ = d.Delete(ctx, deleteErr.Key)
 				continue

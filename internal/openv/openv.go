@@ -78,17 +78,17 @@ func (g *Generator) GetEnvVars(ctx context.Context, itemRef itemref.Ref) (<-chan
 		defer close(envVars)
 
 		for _, item := range items {
-			val, applyErr := mod.Apply(ctx, item.Value, item.Modifiers)
+			applyErr := item.Apply(ctx, g.logger, mod.GetModifiers()...)
 			if applyErr != nil {
 				g.logger.WarnContext(ctx, "skipping field due to error",
-					slog.String("field", item.Name),
+					slog.String("field", item.GetName()),
 					slogtool.ErrorAttr(applyErr),
 				)
 
 				continue
 			}
 
-			envVars <- model.EnvVar{Name: item.Name, Value: val}
+			envVars <- item
 		}
 	}()
 
