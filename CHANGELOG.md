@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/na4ma4/1password-direnv-tool/compare/v1.2.1...v1.3.0) (2026-06-26)
+
+
+### Features
+
+* Add support for direnv watch files in op-direnv ([72d1f23](https://github.com/na4ma4/1password-direnv-tool/commit/72d1f23f25e4e4eed4c21019282d694dafa03f16))
+
+
+### Bug Fixes
+
+* remove commented-out legacy cache methods and return copy in GetModifiers ([dec83d4](https://github.com/na4ma4/1password-direnv-tool/commit/dec83d47316ebc355b19d3d9fdf5f64ffe6cc1ea))
+
 ## [1.2.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.2.0...v1.2.1) (2026-06-26)
 
 
