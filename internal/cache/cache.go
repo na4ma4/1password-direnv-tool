@@ -18,9 +18,7 @@ func (e *NotFoundError) Error() string {
 
 type Cache interface {
 	Close(ctx context.Context) error
-	// Get(ctx context.Context, key string) (string, time.Time, error)
 	Get(ctx context.Context, key string) (string, *model.FileList, time.Time, error)
-	// Set(ctx context.Context, key string, value string) error
 	Set(ctx context.Context, key string, value string) (*model.FileList, error)
 	Iterate(ctx context.Context, fn IterateFunc) error
 	Clear(ctx context.Context) error

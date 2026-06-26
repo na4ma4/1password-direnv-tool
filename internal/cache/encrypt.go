@@ -23,20 +23,6 @@ func (e *Encryption) Close(ctx context.Context) error {
 	return e.cc.Close(ctx)
 }
 
-// func (e *Encryption) Get(ctx context.Context, key string) (string, time.Time, error) {
-// 	v, age, err := e.cc.Get(ctx, key)
-// 	if err != nil {
-// 		return "", time.Time{}, err
-// 	}
-
-// 	v, err = e.codec.Decode(v)
-// 	if err != nil {
-// 		return "", time.Time{}, err
-// 	}
-
-// 	return v, age, nil
-// }
-
 func (e *Encryption) Get(ctx context.Context, key string) (string, *model.FileList, time.Time, error) {
 	v, files, age, err := e.cc.Get(ctx, key)
 	if err != nil {
@@ -50,15 +36,6 @@ func (e *Encryption) Get(ctx context.Context, key string) (string, *model.FileLi
 
 	return v, files, age, nil
 }
-
-// func (e *Encryption) Set(ctx context.Context, key string, value string) error {
-// 	v, err := e.codec.Encode(value)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return e.cc.Set(ctx, key, v)
-// }
 
 func (e *Encryption) Set(ctx context.Context, key string, value string) (*model.FileList, error) {
 	v, err := e.codec.Encode(value)

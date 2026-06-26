@@ -31,5 +31,8 @@ func (r *registry) Add(m model.Modifier) *registry {
 }
 
 func (r *registry) GetModifiers() []model.Modifier {
-	return r.modifiers
+	result := make([]model.Modifier, len(r.modifiers))
+	copy(result, r.modifiers)
+
+	return result
 }
