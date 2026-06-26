@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/na4ma4/1password-direnv-tool/compare/v1.2.0...v1.2.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* Handle non-ID vault references in 1Password provider ([cbaacf4](https://github.com/na4ma4/1password-direnv-tool/commit/cbaacf4e9b65665a19b3b2b5c885eef7f91fe276))
+
 ## [1.2.0](https://github.com/na4ma4/1password-direnv-tool/compare/v1.1.1...v1.2.0) (2026-06-23)
 
 
