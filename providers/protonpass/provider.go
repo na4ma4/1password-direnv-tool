@@ -42,17 +42,28 @@ func (p *Provider) Name() string {
 	return "protonpass"
 }
 
-func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string) ([]model.EnvItem, error) {
-	vaultRef, itemRef, err := p.parseRef(ref)
-	if err != nil {
-		return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
+func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string) ([]model.EnvVar, error) {
+	var vaultRef, itemRef string
+	{
+		var err error
+		vaultRef, itemRef, err = p.parseRef(ref)
+		if err != nil {
+			return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
+		}
 	}
 
 	p.logger.DebugContext(ctx, "listing vaults")
+	fileList := &model.FileList{}
 
-	shareID, err := p.resolveVaultShareID(ctx, vaultRef)
-	if err != nil {
-		return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+	var shareID string
+	{
+		var err error
+		var files *model.FileList
+		shareID, files, err = p.resolveVaultShareID(ctx, vaultRef)
+		if err != nil {
+			return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
+		}
+		fileList.Merge(files)
 	}
 
 	p.logger.DebugContext(ctx, "viewing item",
@@ -60,12 +71,18 @@ func (p *Provider) LookupEnvVars(ctx context.Context, ref string, section string
 		slog.String("item", itemRef),
 	)
 
-	viewResp, err := p.viewItem(ctx, shareID, itemRef)
-	if err != nil {
-		return nil, fmt.Errorf("viewing item %q: %w", itemRef, err)
+	var viewResp passItemViewResponse
+	{
+		var err error
+		var files *model.FileList
+		viewResp, files, err = p.viewItem(ctx, shareID, itemRef)
+		if err != nil {
+			return nil, fmt.Errorf("viewing item %q: %w", itemRef, err)
+		}
+		fileList.Merge(files)
 	}
 
-	return p.processItemFields(ctx, viewResp.Item, section)
+	return p.processItemFields(ctx, fileList, viewResp.Item, section)
 }
 
 func (p *Provider) SecretResolver() model.SecretResolver {
@@ -76,52 +93,73 @@ type secretResolver struct {
 	p *Provider
 }
 
-func (r *secretResolver) ResolveSecret(ctx context.Context, ref string) (string, error) {
+func (r *secretResolver) ResolveSecret(ctx context.Context, ref *model.SecretRef) error {
 	return r.p.resolveSecret(ctx, ref)
 }
 
-func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) (*model.ExecCredential, error) {
-	var vaultRef, itemRef string
-	{
-		var err error
-		vaultRef, itemRef, err = r.p.parseRef(ref)
-		if err != nil {
-			return nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
-		}
+func (r *secretResolver) retrieveK8sItem(
+	ctx context.Context,
+	ref string,
+) (string, passItemViewResponse, *model.FileList, error) {
+	vaultRef, itemRef, err := r.p.parseRef(ref)
+	if err != nil {
+		return "", passItemViewResponse{}, nil, fmt.Errorf("parsing item reference %q: %w", ref, err)
 	}
 
-	r.p.logger.DebugContext(ctx, "resolving vault for k8s credential",
-		slog.String("vault", vaultRef),
-	)
+	r.p.logger.DebugContext(ctx, "resolving vault for k8s credential", slog.String("vault", vaultRef))
 
-	var shareID string
-	{
-		var err error
-		shareID, err = r.p.resolveVaultShareID(ctx, vaultRef)
-		if err != nil {
-			return nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
-		}
+	fileList := &model.FileList{}
+	shareID, files, err := r.p.resolveVaultShareID(ctx, vaultRef)
+	if err != nil {
+		return "", passItemViewResponse{}, nil, fmt.Errorf("resolving vault %q: %w", vaultRef, err)
 	}
+	fileList.Merge(files)
 
 	r.p.logger.DebugContext(ctx, "viewing item for k8s credential",
-		slog.String("vault", vaultRef),
-		slog.String("item", itemRef),
+		slog.String("vault", vaultRef), slog.String("item", itemRef),
 	)
 
-	var viewResp passItemViewResponse
-	{
-		var err error
-		viewResp, err = r.p.viewItem(ctx, shareID, itemRef)
-		if err != nil {
-			return nil, fmt.Errorf("viewing item %q: %w", itemRef, err)
-		}
+	viewResp, files, err := r.p.viewItem(ctx, shareID, itemRef)
+	if err != nil {
+		return "", passItemViewResponse{}, nil, fmt.Errorf("viewing item %q: %w", itemRef, err)
+	}
+	fileList.Merge(files)
+
+	return shareID, viewResp, fileList, nil
+}
+
+func (r *secretResolver) retrieveK8sAttachment(
+	ctx context.Context,
+	shareID, itemID, attachmentID string,
+	fileList *model.FileList,
+) ([]byte, *model.FileList, error) {
+	if attachmentID == "" {
+		return nil, fileList, nil
+	}
+
+	data, files, err := r.p.downloadAttachment(ctx, shareID, itemID, attachmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return data, fileList.Merge(files), nil
+}
+
+func (r *secretResolver) RetrieveK8sCredential(
+	ctx context.Context,
+	ref string,
+) (*model.ExecCredential, *model.FileList, error) {
+	var err error
+	shareID, viewResp, fileList, err := r.retrieveK8sItem(ctx, ref)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	o := model.NewExecCredential()
 
 	var itemContent passItemNote
-	if err := json.Unmarshal(viewResp.Item.Content, &itemContent); err != nil {
-		return nil, fmt.Errorf("parsing item content: %w", err)
+	if err = json.Unmarshal(viewResp.Item.Content, &itemContent); err != nil {
+		return nil, nil, fmt.Errorf("parsing item content: %w", err)
 	}
 
 	for _, ef := range itemContent.ExtraFields {
@@ -143,35 +181,38 @@ func (r *secretResolver) RetrieveK8sCredential(ctx context.Context, ref string) 
 		}
 	}
 
-	if clientPemID != "" {
-		data, err := r.p.downloadAttachment(ctx, shareID, viewResp.Item.ID, clientPemID)
-		if err != nil {
-			return nil, fmt.Errorf("downloading client.pem: %w", err)
-		}
-		o.Status.ClientCertificateData = string(data)
-	}
+	var data []byte
+	var fl *model.FileList
 
-	if clientKeyPemID != "" {
-		data, err := r.p.downloadAttachment(ctx, shareID, viewResp.Item.ID, clientKeyPemID)
-		if err != nil {
-			return nil, fmt.Errorf("downloading client-key.pem: %w", err)
-		}
-		o.Status.ClientKeyData = string(data)
+	if data, fl, err = r.retrieveK8sAttachment(ctx, shareID, viewResp.Item.ID, clientPemID, fileList); err != nil {
+		return nil, nil, fmt.Errorf("downloading client.pem: %w", err)
 	}
+	fileList = fl
+	o.Status.ClientCertificateData = string(data)
 
-	if caPemID != "" {
-		data, err := r.p.downloadAttachment(ctx, shareID, viewResp.Item.ID, caPemID)
-		if err != nil {
-			return nil, fmt.Errorf("downloading ca.pem: %w", err)
-		}
-		o.Spec.Cluster.CertificateAuthorityData = base64.StdEncoding.EncodeToString(data)
+	if data, fl, err = r.retrieveK8sAttachment(ctx, shareID, viewResp.Item.ID, clientKeyPemID, fileList); err != nil {
+		return nil, nil, fmt.Errorf("downloading client-key.pem: %w", err)
 	}
+	fileList = fl
+	o.Status.ClientKeyData = string(data)
 
-	return o, nil
+	if data, fl, err = r.retrieveK8sAttachment(ctx, shareID, viewResp.Item.ID, caPemID, fileList); err != nil {
+		return nil, nil, fmt.Errorf("downloading ca.pem: %w", err)
+	}
+	fileList = fl
+	o.Spec.Cluster.CertificateAuthorityData = base64.StdEncoding.EncodeToString(data)
+
+	return o, fileList, nil
 }
 
-func (p *Provider) resolveSecret(ctx context.Context, ref string) (string, error) {
-	return cache.ProtonPassResolveSecret(ctx, p.cc, p.logger, p.runPassCLIOutput, ref)
+func (p *Provider) resolveSecret(ctx context.Context, ref *model.SecretRef) error {
+	value, files, err := cache.ProtonPassResolveSecret(ctx, p.cc, p.logger, p.runPassCLIOutput, ref.GetValue())
+	if err != nil {
+		return fmt.Errorf("resolving secret: %w", err)
+	}
+	ref.MergeFiles(files)
+	ref.Value = value
+	return nil
 }
 
 func (p *Provider) parseRef(ref string) (string, string, error) {
@@ -201,14 +242,18 @@ func (p *Provider) parseRef(ref string) (string, string, error) {
 	return vaultRef, itemRef, nil
 }
 
-func (p *Provider) resolveVaultShareID(ctx context.Context, vaultRef string) (string, error) {
+func (p *Provider) resolveVaultShareID(ctx context.Context, vaultRef string) (string, *model.FileList, error) {
+	fileList := &model.FileList{}
+
 	var vaultsJSON string
 	{
 		var err error
-		vaultsJSON, err = cache.ProtonPassVaultList(ctx, p.cc, p.logger, p.runPassCLIOutput)
+		var files *model.FileList
+		vaultsJSON, files, err = cache.ProtonPassVaultList(ctx, p.cc, p.logger, p.runPassCLIOutput)
 		if err != nil {
-			return "", fmt.Errorf("listing vaults: %w", err)
+			return "", nil, fmt.Errorf("listing vaults: %w", err)
 		}
+		fileList.Merge(files)
 	}
 
 	var vaultList struct {
@@ -220,34 +265,39 @@ func (p *Provider) resolveVaultShareID(ctx context.Context, vaultRef string) (st
 	}
 
 	if err := json.Unmarshal([]byte(vaultsJSON), &vaultList); err != nil {
-		return "", fmt.Errorf("parsing vault list: %w", err)
+		return "", nil, fmt.Errorf("parsing vault list: %w", err)
 	}
 
 	for _, v := range vaultList.Vaults {
 		if v.ShareID == vaultRef || strings.EqualFold(v.Name, vaultRef) {
-			return v.ShareID, nil
+			return v.ShareID, fileList, nil
 		}
 	}
 
-	return "", fmt.Errorf("%w: %q", ErrVaultNotFound, vaultRef)
+	return "", nil, fmt.Errorf("%w: %q", ErrVaultNotFound, vaultRef)
 }
 
-func (p *Provider) viewItem(ctx context.Context, shareID string, itemRef string) (passItemViewResponse, error) {
+func (p *Provider) viewItem(
+	ctx context.Context,
+	shareID string,
+	itemRef string,
+) (passItemViewResponse, *model.FileList, error) {
 	var itemJSON string
+	var fileList *model.FileList
 	{
 		var err error
-		itemJSON, err = cache.ProtonPassViewItem(ctx, p.cc, p.logger, p.runPassCLIOutput, shareID, itemRef)
+		itemJSON, fileList, err = cache.ProtonPassViewItem(ctx, p.cc, p.logger, p.runPassCLIOutput, shareID, itemRef)
 		if err != nil {
-			return passItemViewResponse{}, fmt.Errorf("viewing item: %w", err)
+			return passItemViewResponse{}, nil, fmt.Errorf("viewing item: %w", err)
 		}
 	}
 
 	var viewResp passItemViewResponse
 	if err := json.Unmarshal([]byte(itemJSON), &viewResp); err != nil {
-		return passItemViewResponse{}, fmt.Errorf("parsing item JSON: %w", err)
+		return passItemViewResponse{}, nil, fmt.Errorf("parsing item JSON: %w", err)
 	}
 
-	return viewResp, nil
+	return viewResp, fileList, nil
 }
 
 type passItemData struct {
@@ -305,8 +355,13 @@ type passCustomContent struct {
 	Sections []passCustomSection `json:"sections"`
 }
 
-func (p *Provider) processItemFields(ctx context.Context, item passItemData, section string) ([]model.EnvItem, error) {
-	var result []model.EnvItem
+func (p *Provider) processItemFields(
+	ctx context.Context,
+	fileList *model.FileList,
+	item passItemData,
+	section string,
+) ([]model.EnvVar, error) {
+	var result []model.EnvVar
 
 	fields := p.extractAllFields(ctx, item)
 
@@ -331,8 +386,9 @@ func (p *Provider) processItemFields(ctx context.Context, item passItemData, sec
 			slog.String("modifiers", strings.Join(modifiers, ",")),
 		)
 
-		result = append(result, model.EnvItem{
+		result = append(result, &model.EnvItem{
 			Name:      varName,
+			FileList:  fileList,
 			Value:     f.value,
 			Modifiers: modifiers,
 		})
@@ -477,7 +533,10 @@ func extractExtraFieldValue(raw json.RawMessage) string {
 	return ""
 }
 
-func (p *Provider) downloadAttachment(ctx context.Context, shareID, itemID, attachmentID string) ([]byte, error) {
+func (p *Provider) downloadAttachment(
+	ctx context.Context,
+	shareID, itemID, attachmentID string,
+) ([]byte, *model.FileList, error) {
 	return cache.ProtonPassDownloadAttachment(
 		ctx,
 		p.cc,
@@ -492,18 +551,18 @@ func (p *Provider) downloadAttachment(ctx context.Context, shareID, itemID, atta
 func (p *Provider) downloadAttachmentUncached(
 	ctx context.Context,
 	shareID, itemID, attachmentID string,
-) ([]byte, error) {
+) ([]byte, *model.FileList, error) {
 	var tmpFile *os.File
 	{
 		var err error
 		tmpFile, err = os.CreateTemp("", "pass-attachment-*")
 		if err != nil {
-			return nil, fmt.Errorf("creating temp file: %w", err)
+			return nil, nil, fmt.Errorf("creating temp file: %w", err)
 		}
 		defer os.Remove(tmpFile.Name())
 	}
 	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("closing temp file: %w", err)
+		return nil, nil, fmt.Errorf("closing temp file: %w", err)
 	}
 
 	if _, err := p.runPassCLIOutput(ctx,
@@ -513,15 +572,15 @@ func (p *Provider) downloadAttachmentUncached(
 		"--attachment-id", attachmentID,
 		"--output", tmpFile.Name(),
 	); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	data, err := os.ReadFile(tmpFile.Name())
 	if err != nil {
-		return nil, fmt.Errorf("reading downloaded attachment: %w", err)
+		return nil, nil, fmt.Errorf("reading downloaded attachment: %w", err)
 	}
 
-	return data, nil
+	return data, nil, nil
 }
 
 var errBadArg = errors.New("invalid argument")

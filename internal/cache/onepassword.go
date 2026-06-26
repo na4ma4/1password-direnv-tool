@@ -13,6 +13,8 @@ import (
 	"github.com/1password/onepassword-sdk-go"
 	"github.com/na4ma4/go-slogtool"
 	"github.com/spf13/viper"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 // OPClientFunc is a function type that returns a 1Password client. It is used to allow for
@@ -234,13 +236,13 @@ func OnePasswordSecretResolve(
 	logger *slog.Logger,
 	opClient OPClientFunc,
 	secretRef string,
-) (string, error) {
+) (string, *model.FileList, error) {
 	if cc != nil {
-		cached, _, getErr := cc.Get(ctx, secretRef)
+		cached, files, _, getErr := cc.Get(ctx, secretRef)
 		switch {
 		case getErr == nil:
 			logger.DebugContext(ctx, "cache hit for secret", slog.String("secret_ref", secretRef))
-			return cached, nil
+			return cached, files, nil
 		case !errors.Is(getErr, ErrNotFound):
 			logger.ErrorContext(ctx, "cache error", slog.String("secret_ref", secretRef), slogtool.ErrorAttr(getErr))
 		default:
@@ -253,7 +255,7 @@ func OnePasswordSecretResolve(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return "", fmt.Errorf("initialising 1Password client: %w", err)
+			return "", nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
@@ -262,19 +264,20 @@ func OnePasswordSecretResolve(
 		var err error
 		item, err = onePasswordResolveSecretCancelable(ctx, client, secretRef)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
 	if cc != nil {
-		if err := cc.Set(ctx, secretRef, item); err != nil {
+		if files, err := cc.Set(ctx, secretRef, item); err != nil {
 			logger.ErrorContext(ctx, "cache error", slog.String("secret_ref", secretRef), slogtool.ErrorAttr(err))
 		} else {
 			logger.DebugContext(ctx, "cached secret", slog.String("secret_ref", secretRef))
+			return item, files, nil
 		}
 	}
 
-	return item, nil
+	return item, nil, nil
 }
 
 func OnePasswordGetItem(
@@ -283,10 +286,10 @@ func OnePasswordGetItem(
 	logger *slog.Logger,
 	opClient OPClientFunc,
 	vaultID, itemID string,
-) (onepassword.Item, error) {
+) (onepassword.Item, *model.FileList, error) {
 	cacheKey := "onepassword/item/" + vaultID + "/" + itemID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
-		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
+		if cached, files, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for item", slog.String("cache_key", cacheKey))
 			item, err := jsonDecode[onepassword.Item](cached)
 			if err != nil {
@@ -294,7 +297,7 @@ func OnePasswordGetItem(
 					slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
 				)
 			} else {
-				return item, nil
+				return item, files, nil
 			}
 			logger.WarnContext(ctx, "cache value has unexpected type", slog.String("cache_key", cacheKey))
 		} else if !errors.Is(getErr, ErrNotFound) {
@@ -310,7 +313,7 @@ func OnePasswordGetItem(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return onepassword.Item{}, fmt.Errorf("initialising 1Password client: %w", err)
+			return onepassword.Item{}, nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
@@ -320,7 +323,7 @@ func OnePasswordGetItem(
 		var err error
 		item, err = onePasswordGetItemCancelable(ctx, client, vaultID, itemID)
 		if err != nil {
-			return onepassword.Item{}, err
+			return onepassword.Item{}, nil, err
 		}
 	}
 
@@ -331,17 +334,20 @@ func OnePasswordGetItem(
 			logger.ErrorContext(ctx, "failed to encode item for caching",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
 			)
-			return item, nil
+
+			return item, nil, nil
 		}
 
-		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
+		files, err := cc.Set(ctx, cacheKey, buf.String())
+		if err != nil {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 		} else {
 			logger.DebugContext(ctx, "cached item", slog.String("cache_key", cacheKey))
+			return item, files, nil
 		}
 	}
 
-	return item, nil
+	return item, nil, nil
 }
 
 func OnePasswordVaultList(
@@ -349,14 +355,14 @@ func OnePasswordVaultList(
 	cc Cache,
 	logger *slog.Logger,
 	opClient OPClientFunc,
-) ([]onepassword.VaultOverview, error) {
+) ([]onepassword.VaultOverview, *model.FileList, error) {
 	cacheKey := "onepassword/vaults/list"
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
-		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
+		if cached, files, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for vault list", slog.String("cache_key", cacheKey))
 			vaults, err := jsonDecode[[]onepassword.VaultOverview](cached)
 			if err == nil {
-				return vaults, nil
+				return vaults, files, nil
 			}
 		} else if !errors.Is(getErr, ErrNotFound) {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(getErr))
@@ -371,7 +377,7 @@ func OnePasswordVaultList(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("initialising 1Password client: %w", err)
+			return nil, nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
@@ -381,7 +387,7 @@ func OnePasswordVaultList(
 		var err error
 		vaults, err = onePasswordListVaultsCancelable(ctx, client)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -391,16 +397,17 @@ func OnePasswordVaultList(
 		if err := json.NewEncoder(buf).Encode(vaults); err != nil {
 			logger.ErrorContext(ctx, "failed to encode vault list for caching",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
-			return vaults, nil
+			return vaults, nil, nil
 		}
-		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
+		if files, err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 		} else {
 			logger.DebugContext(ctx, "cached vault list", slog.String("cache_key", cacheKey))
+			return vaults, files, nil
 		}
 	}
 
-	return vaults, nil
+	return vaults, nil, nil
 }
 
 func OnePasswordItemList(
@@ -409,14 +416,14 @@ func OnePasswordItemList(
 	logger *slog.Logger,
 	opClient OPClientFunc,
 	vaultID string,
-) ([]onepassword.ItemOverview, error) {
+) ([]onepassword.ItemOverview, *model.FileList, error) {
 	cacheKey := "onepassword/items/list/" + vaultID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
-		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
+		if cached, files, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for item list", slog.String("cache_key", cacheKey))
 			items, err := jsonDecode[[]onepassword.ItemOverview](cached)
 			if err == nil {
-				return items, nil
+				return items, files, nil
 			}
 			logger.WarnContext(ctx, "cache value has unexpected type",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
@@ -433,7 +440,7 @@ func OnePasswordItemList(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("initialising 1Password client: %w", err)
+			return nil, nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
@@ -443,7 +450,7 @@ func OnePasswordItemList(
 		var err error
 		items, err = onePasswordListItemsCancelable(ctx, client, vaultID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -453,17 +460,18 @@ func OnePasswordItemList(
 		if err := json.NewEncoder(buf).Encode(items); err != nil {
 			logger.ErrorContext(ctx, "failed to encode item list for caching",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
-			return items, nil
+			return items, nil, nil
 		}
 
-		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
+		if files, err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 		} else {
 			logger.DebugContext(ctx, "cached item list", slog.String("cache_key", cacheKey))
+			return items, files, nil
 		}
 	}
 
-	return items, nil
+	return items, nil, nil
 }
 
 func OnePasswordGetFileContent(
@@ -473,10 +481,10 @@ func OnePasswordGetFileContent(
 	opClient OPClientFunc,
 	vaultID, itemID string,
 	attr onepassword.FileAttributes,
-) ([]byte, error) {
+) ([]byte, *model.FileList, error) {
 	cacheKey := "onepassword/file/" + vaultID + "/" + itemID + "/" + attr.ID
 	if cc != nil { //nolint:nestif // nesting is acceptable here for cache retrieval logic
-		if cached, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
+		if cached, files, _, getErr := cc.Get(ctx, cacheKey); getErr == nil {
 			logger.DebugContext(ctx, "cache hit for item", slog.String("cache_key", cacheKey))
 			file, err := jsonDecode[[]byte](cached)
 			if err != nil {
@@ -484,7 +492,7 @@ func OnePasswordGetFileContent(
 					slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
 				)
 			} else {
-				return file, nil
+				return file, files, nil
 			}
 		} else if !errors.Is(getErr, ErrNotFound) {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(getErr))
@@ -499,7 +507,7 @@ func OnePasswordGetFileContent(
 		var err error
 		client, err = opClient(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("initialising 1Password client: %w", err)
+			return nil, nil, fmt.Errorf("initialising 1Password client: %w", err)
 		}
 	}
 
@@ -509,7 +517,7 @@ func OnePasswordGetFileContent(
 		var err error
 		file, err = onePasswordGetFileCancelable(ctx, client, vaultID, itemID, attr)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -520,15 +528,16 @@ func OnePasswordGetFileContent(
 			logger.ErrorContext(ctx, "failed to encode item for caching",
 				slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err),
 			)
-			return file, nil
+			return file, nil, nil
 		}
 
-		if err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
+		if files, err := cc.Set(ctx, cacheKey, buf.String()); err != nil {
 			logger.ErrorContext(ctx, "cache error", slog.String("cache_key", cacheKey), slogtool.ErrorAttr(err))
 		} else {
 			logger.DebugContext(ctx, "cached item", slog.String("cache_key", cacheKey))
+			return file, files, nil
 		}
 	}
 
-	return file, nil
+	return file, nil, nil
 }

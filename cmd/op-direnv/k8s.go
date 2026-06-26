@@ -87,7 +87,7 @@ func k8sCommand(cmd *cobra.Command, args []string) error {
 	var cred *model.ExecCredential
 	{
 		var err error
-		cred, err = t.LookupExecCredential(ctx, itemRef.String())
+		cred, _, err = t.LookupExecCredential(ctx, itemRef.String())
 		if err != nil {
 			logger.ErrorContext(ctx, "failed to lookup ExecCredential", slogtool.ErrorAttr(err))
 			return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)

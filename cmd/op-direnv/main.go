@@ -86,17 +86,43 @@ func getProvider(
 	}
 }
 
-func mainCmd(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-	ctx, cancel := context.WithTimeout(ctx, viper.GetDuration("timeout"))
-	defer cancel()
-
+func setupLogger() *slog.Logger {
 	logLevel := slog.LevelInfo
 	if viper.GetBool("debug") {
 		logLevel = slog.LevelDebug
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel}))
-	logger.DebugContext(ctx, "enabled debug logging")
+	logger.Debug("enabled debug logging")
+
+	return logger
+}
+
+func outputEnvVars(envVars <-chan model.EnvVar) {
+	watchList := model.NewFileList("")
+
+	fmt.Fprintln(os.Stdout, "## Exports")
+	for env := range envVars {
+		//nolint:gosec,nolintlint
+		fmt.Fprintf(os.Stdout, "export %s=%s\n", env.GetName(), shellQuote(env.GetValue()))
+		watchList.Merge(env.GetFileList())
+	}
+
+	if watchList.Len() > 0 {
+		fmt.Fprintln(os.Stdout, "")
+		fmt.Fprintln(os.Stdout, "## Direnv watch files")
+		for _, file := range watchList.GetFiles() {
+			//nolint:gosec,nolintlint
+			fmt.Fprintf(os.Stdout, "watch_file %s\n", shellQuote(file))
+		}
+	}
+}
+
+func mainCmd(cmd *cobra.Command, _ []string) error {
+	ctx := cmd.Context()
+	ctx, cancel := context.WithTimeout(ctx, viper.GetDuration("timeout"))
+	defer cancel()
+
+	logger := setupLogger()
 
 	if codec.Default == nil {
 		logger.ErrorContext(ctx, "no codec available for decrypting item reference")
@@ -134,8 +160,6 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 
 	var opResolver, passResolver model.SecretResolver
 
-	opClient := cache.OnePasswordClientLazyInit(ctx, logger)
-
 	switch scheme {
 	case "op":
 		opResolver = provider.SecretResolver()
@@ -144,6 +168,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 			return p.SecretResolver(), nil
 		})
 	case "pass":
+		opClient := cache.OnePasswordClientLazyInit(ctx, logger)
 		opResolver = lazy.NewResolver(func() (model.SecretResolver, error) {
 			p := onepassword.NewProvider(opClient, cst, logger)
 			return p.SecretResolver(), nil
@@ -160,10 +185,7 @@ func mainCmd(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("%w%w", cmdconst.ErrNoUsage, err)
 	}
 
-	for env := range envVars {
-		//nolint:gosec,nolintlint
-		fmt.Fprintf(os.Stdout, "export %s=%s\n", env.Name, shellQuote(env.Value))
-	}
+	outputEnvVars(envVars)
 
 	return nil
 }

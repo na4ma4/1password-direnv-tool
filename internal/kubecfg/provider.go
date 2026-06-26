@@ -18,11 +18,14 @@ func (p *Provider) Name() string {
 	return p.p.Name()
 }
 
-func (p *Provider) LookupExecCredential(ctx context.Context, ref string) (*model.ExecCredential, error) {
-	secret, err := p.p.SecretResolver().RetrieveK8sCredential(ctx, ref)
+func (p *Provider) LookupExecCredential(
+	ctx context.Context,
+	ref string,
+) (*model.ExecCredential, *model.FileList, error) {
+	secret, files, err := p.p.SecretResolver().RetrieveK8sCredential(ctx, ref)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return secret, nil
+	return secret, files, nil
 }

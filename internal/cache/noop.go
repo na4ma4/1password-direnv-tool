@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 type Noop struct{}
@@ -16,12 +18,12 @@ func (n *Noop) Close(_ context.Context) error {
 	return nil
 }
 
-func (n *Noop) Get(_ context.Context, _ string) (string, time.Time, error) {
-	return "", time.Time{}, ErrNotFound
+func (n *Noop) Get(_ context.Context, _ string) (string, *model.FileList, time.Time, error) {
+	return "", nil, time.Time{}, ErrNotFound
 }
 
-func (n *Noop) Set(_ context.Context, _ string, _ string) error {
-	return nil
+func (n *Noop) Set(_ context.Context, _ string, _ string) (*model.FileList, error) {
+	return nil, nil //nolint:nilnil // Noop cache does not store files, so return nil for FileList and error
 }
 
 func (n *Noop) Iterate(_ context.Context, _ IterateFunc) error {

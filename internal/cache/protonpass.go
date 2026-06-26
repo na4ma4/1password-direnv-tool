@@ -5,18 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+
+	"github.com/na4ma4/1password-direnv-tool/model"
 )
 
 type ProtonPassRunner func(ctx context.Context, args ...string) (string, error)
 
-type ProtonPassDownloader func(ctx context.Context, shareID, itemID, attachmentID string) ([]byte, error)
+type ProtonPassDownloader func(ctx context.Context, shareID, itemID, attachmentID string) ([]byte, *model.FileList, error)
 
-func ProtonPassVaultList(ctx context.Context, cc Cache, logger *slog.Logger, runner ProtonPassRunner) (string, error) {
+func ProtonPassVaultList(
+	ctx context.Context,
+	cc Cache,
+	logger *slog.Logger,
+	runner ProtonPassRunner,
+) (string, *model.FileList, error) {
 	const cacheKey = "protonpass/vaults/list"
 
-	if cached, _, err := cc.Get(ctx, cacheKey); err == nil {
+	if cached, files, _, err := cc.Get(ctx, cacheKey); err == nil {
 		logger.DebugContext(ctx, "cache hit for vault list")
-		return cached, nil
+		return cached, files, nil
 	} else if errors.Is(err, ErrNotFound) {
 		logger.DebugContext(ctx, "cache miss for vault list")
 	} else {
@@ -28,15 +35,17 @@ func ProtonPassVaultList(ctx context.Context, cc Cache, logger *slog.Logger, run
 		var err error
 		data, err = runner(ctx, "vault", "list", "--output", "json")
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	if err := cc.Set(ctx, cacheKey, data); err != nil {
+	if files, err := cc.Set(ctx, cacheKey, data); err != nil {
 		logger.WarnContext(ctx, "failed to cache vault list", slog.String("error", err.Error()))
+	} else {
+		return data, files, nil
 	}
 
-	return data, nil
+	return data, nil, nil
 }
 
 func ProtonPassViewItem(
@@ -45,12 +54,12 @@ func ProtonPassViewItem(
 	logger *slog.Logger,
 	runner ProtonPassRunner,
 	shareID, itemRef string,
-) (string, error) {
+) (string, *model.FileList, error) {
 	cacheKey := "protonpass/item_view/" + shareID + "/" + itemRef
 
-	if cached, _, err := cc.Get(ctx, cacheKey); err == nil {
+	if cached, files, _, err := cc.Get(ctx, cacheKey); err == nil {
 		logger.DebugContext(ctx, "cache hit for item view", slog.String("item", itemRef))
-		return cached, nil
+		return cached, files, nil
 	} else if errors.Is(err, ErrNotFound) {
 		logger.DebugContext(ctx, "cache miss for item view", slog.String("item", itemRef))
 	} else {
@@ -63,15 +72,17 @@ func ProtonPassViewItem(
 		var err error
 		data, err = runner(ctx, "item", "view", itemURI, "--output", "json")
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	if err := cc.Set(ctx, cacheKey, data); err != nil {
+	if files, err := cc.Set(ctx, cacheKey, data); err != nil {
 		logger.WarnContext(ctx, "failed to cache item view", slog.String("error", err.Error()))
+	} else {
+		return data, files, nil
 	}
 
-	return data, nil
+	return data, nil, nil
 }
 
 func ProtonPassResolveSecret(
@@ -80,10 +91,10 @@ func ProtonPassResolveSecret(
 	logger *slog.Logger,
 	runner ProtonPassRunner,
 	ref string,
-) (string, error) {
-	if cached, _, err := cc.Get(ctx, ref); err == nil {
+) (string, *model.FileList, error) {
+	if cached, files, _, err := cc.Get(ctx, ref); err == nil {
 		logger.DebugContext(ctx, "cache hit for secret", slog.String("ref", ref))
-		return cached, nil
+		return cached, files, nil
 	} else if errors.Is(err, ErrNotFound) {
 		logger.DebugContext(ctx, "cache miss for secret", slog.String("ref", ref))
 	} else {
@@ -95,15 +106,17 @@ func ProtonPassResolveSecret(
 		var err error
 		data, err = runner(ctx, "item", "view", ref)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 	}
 
-	if err := cc.Set(ctx, ref, data); err != nil {
+	if files, err := cc.Set(ctx, ref, data); err != nil {
 		logger.WarnContext(ctx, "failed to cache secret", slog.String("error", err.Error()))
+	} else {
+		return data, files, nil
 	}
 
-	return data, nil
+	return data, nil, nil
 }
 
 func ProtonPassDownloadAttachment(
@@ -112,15 +125,15 @@ func ProtonPassDownloadAttachment(
 	logger *slog.Logger,
 	downloader ProtonPassDownloader,
 	shareID, itemID, attachmentID string,
-) ([]byte, error) {
+) ([]byte, *model.FileList, error) {
 	cacheKey := "protonpass/attachment/" + shareID + "/" + itemID + "/" + attachmentID
 
-	if cached, _, cachedErr := cc.Get(ctx, cacheKey); cachedErr == nil {
+	if cached, files, _, cachedErr := cc.Get(ctx, cacheKey); cachedErr == nil {
 		var data []byte
 		err := json.Unmarshal([]byte(cached), &data)
 		if err == nil {
 			logger.DebugContext(ctx, "cache hit for attachment", slog.String("attachment_id", attachmentID))
-			return data, nil
+			return data, files, nil
 		}
 		logger.WarnContext(ctx, "failed to decode cached attachment", slog.String("error", err.Error()))
 	} else if errors.Is(cachedErr, ErrNotFound) {
@@ -130,11 +143,12 @@ func ProtonPassDownloadAttachment(
 	}
 
 	var data []byte
+	var fileList *model.FileList
 	{
 		var err error
-		data, err = downloader(ctx, shareID, itemID, attachmentID)
+		data, fileList, err = downloader(ctx, shareID, itemID, attachmentID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -144,13 +158,15 @@ func ProtonPassDownloadAttachment(
 		encoded, err = json.Marshal(data)
 		if err != nil {
 			logger.WarnContext(ctx, "failed to encode attachment for cache", slog.String("error", err.Error()))
-			return data, nil
+			return data, fileList, nil
 		}
 	}
 
-	if err := cc.Set(ctx, cacheKey, string(encoded)); err != nil {
+	if setFileList, err := cc.Set(ctx, cacheKey, string(encoded)); err != nil {
 		logger.WarnContext(ctx, "failed to cache attachment", slog.String("error", err.Error()))
+	} else {
+		fileList = fileList.Merge(setFileList)
 	}
 
-	return data, nil
+	return data, fileList, nil
 }
