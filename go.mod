@@ -3,7 +3,7 @@ module github.com/na4ma4/1password-direnv-tool
 go 1.26
 
 require (
-	github.com/1password/onepassword-sdk-go v0.4.0
+	github.com/1password/onepassword-sdk-go v0.4.1
 	github.com/dosquad/go-cliversion v0.3.0
 	github.com/na4ma4/go-permbits v0.5.4
 	github.com/na4ma4/go-slogtool v1.0.1
