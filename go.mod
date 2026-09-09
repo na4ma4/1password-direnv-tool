@@ -1,6 +1,6 @@
 module github.com/na4ma4/1password-direnv-tool
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/1password/onepassword-sdk-go v0.4.1
@@ -9,7 +9,7 @@ require (
 	github.com/na4ma4/go-slogtool v1.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	lds.li/keychain v0.1.0
 )
 
