@@ -57,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(importKeyCmd)
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(k8sCmd)
+	rootCmd.AddCommand(cacheCmd)
 }
 
 func main() {

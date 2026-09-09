@@ -110,7 +110,7 @@ func outputEnvVars(envVars <-chan model.EnvVar) {
 	if watchList.Len() > 0 {
 		fmt.Fprintln(os.Stdout, "")
 		fmt.Fprintln(os.Stdout, "## Direnv watch files")
-		for _, file := range watchList.GetFiles() {
+		for _, file := range watchList.ToSlice() {
 			//nolint:gosec,nolintlint
 			fmt.Fprintf(os.Stdout, "watch_file %s\n", shellQuote(file))
 		}

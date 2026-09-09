@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,21 @@ func (d *Disk) keyToFilename(key string) string {
 	}
 
 	return filepath.Join(p...) + cacheFileExtension
+}
+
+func (d *Disk) filenameToKey(filename string) (string, error) {
+	filename = strings.TrimSuffix(filename, cacheFileExtension)
+
+	p := make([]string, 0, strings.Count(filename, "/")+1)
+	for s := range strings.SplitSeq(filename, "/") {
+		decoded, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(s)
+		if err != nil {
+			return "", err
+		}
+		p = append(p, string(decoded))
+	}
+
+	return filepath.Join(p...), nil
 }
 
 func (d *Disk) Get(_ context.Context, key string) (string, *model.FileList, time.Time, error) {
@@ -130,10 +146,10 @@ func (d *Disk) Delete(_ context.Context, key string) error {
 	return d.root.Remove(filename)
 }
 
-func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
+func (d *Disk) iterateDirectory(ctx context.Context, path string, fn IterateFunc) error {
 	var entries []os.DirEntry
 	{
-		dir, err := d.root.Open(".")
+		dir, err := d.root.Open(path)
 		if err != nil {
 			return err
 		}
@@ -146,9 +162,6 @@ func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
 
 		filename := entry.Name()
 		var key string
@@ -162,13 +175,32 @@ func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
 			key = string(keyBytes)
 		}
 
+		if entry.IsDir() {
+			if err := d.iterateDirectory(ctx,
+				filepath.Join(path, filename),
+				fn); err != nil {
+				return err
+			}
+			continue
+		}
+
+		var keyPath string
+		{
+			var err error
+			keyPath, err = d.filenameToKey(filepath.Join(path, filename))
+			if err != nil {
+				continue
+			}
+		}
+
 		var value string
 		var age time.Time
 		var fileList *model.FileList
 		{
 			var err error
-			value, fileList, age, err = d.Get(ctx, key)
+			value, fileList, age, err = d.Get(ctx, keyPath)
 			if err != nil {
+				log.Printf("error retrieving cache entry for key %s: %v", keyPath, err)
 				continue
 			}
 		}
@@ -184,4 +216,8 @@ func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
 	}
 
 	return nil
+}
+
+func (d *Disk) Iterate(ctx context.Context, fn IterateFunc) error {
+	return d.iterateDirectory(ctx, ".", fn)
 }

@@ -42,7 +42,7 @@ func (f *FileList) Merge(t *FileList) *FileList {
 	return f
 }
 
-func (f *FileList) GetFiles() []string {
+func (f *FileList) ToSlice() []string {
 	if f == nil {
 		return nil
 	}
