@@ -7,8 +7,8 @@ github.com/dosquad/go-cliversion v0.3.0 h1:YQG2EOQX9dmfd/+4h3X+ee9nMPqbqxaHhsa/7
 github.com/dosquad/go-cliversion v0.3.0/go.mod h1:Gliu0a5jfTOsxfdXoxhGz3bDHva5gMJPn/Bcuh94sTg=
 github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1 h1:idfl8M8rPW93NehFw5H1qqH8yG158t5POr+LX9avbJY=
 github.com/dylibso/observe-sdk/go v0.0.0-20240828172851-9145d8ad07e1/go.mod h1:C8DzXehI4zAbrdlbtOByKX6pfivJTBiV9Jjqv56Yd9Q=
-github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/ISU=
-github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/ebitengine/purego v0.11.2 h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU=
+github.com/ebitengine/purego v0.11.2/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 github.com/extism/go-sdk v1.7.1 h1:lWJos6uY+tRFdlIHR+SJjwFDApY7OypS/2nMhiVQ9Sw=
 github.com/extism/go-sdk v1.7.1/go.mod h1:IT+Xdg5AZM9hVtpFUA+uZCJMge/hbvshl8bwzLtFyKA=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
@@ -81,5 +81,5 @@ gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntN
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-lds.li/keychain v0.1.0 h1:qyQGNM3a2/dCRXQB8p4C8e7Q/ZTtAHOfbeymFQ7uY/8=
-lds.li/keychain v0.1.0/go.mod h1:7FBBMA51yibUWiHqAGjboezcfq0AyzKf6153Z1VKceM=
+lds.li/keychain v0.2.0 h1:s6nQymB5qKwEjXj0apndNJVymn666s1KyUHEpSKoSvg=
+lds.li/keychain v0.2.0/go.mod h1:UT1bNkk0XmMtmP5sUfyTkm83+esy1nzcu57I/yRI+BQ=
