@@ -12,8 +12,6 @@ type registry struct {
 }
 
 // NewRegistry creates a new registry with the provided options.
-//
-//nolint:revive // registry is not intended to be used as an interface
 func NewRegistry(opts ...regoptionsFunc) *registry {
 	options := &regoptions{}
 	for _, opt := range opts {
