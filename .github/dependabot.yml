@@ -17,12 +17,3 @@ updates:
       all-gomod:
         patterns:
           - "*"
-
-  - package-ecosystem: "gomod"
-    directory: "/magefiles/"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-gomod-mage:
-        patterns:
-          - "*"
