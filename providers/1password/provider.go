@@ -392,14 +392,16 @@ func (p *Provider) processItemFields(
 		modifiers := parts[1:]
 
 		if !validEnvVarName.MatchString(varName) {
-			p.logger.WarnContext(ctx, "skipping field with invalid environment variable name",
+			p.logger.WarnContext(
+				ctx, "skipping field with invalid environment variable name",
 				slog.String("field", varName),
 			)
 
 			continue
 		}
 
-		p.logger.InfoContext(ctx, "processing field",
+		p.logger.InfoContext(
+			ctx, "processing field",
 			slog.String("field", varName),
 			slog.String("modifiers", strings.Join(modifiers, ",")),
 		)
@@ -433,14 +435,15 @@ func (p *Provider) findFieldByShortRef(
 
 	sectionID := ""
 	for _, s := range item.Sections {
-		if strings.EqualFold(s.Title, spRef[0]) {
+		if s.ID == spRef[0] || strings.EqualFold(s.Title, spRef[0]) {
 			sectionID = s.ID
 			break
 		}
 	}
 
 	for _, f := range item.Fields {
-		if f.SectionID != nil && *f.SectionID == sectionID && strings.EqualFold(f.Title, spRef[1]) {
+		if f.SectionID != nil && *f.SectionID == sectionID &&
+			(f.ID == spRef[1] || strings.EqualFold(f.Title, spRef[1])) {
 			return f, nil
 		}
 	}
